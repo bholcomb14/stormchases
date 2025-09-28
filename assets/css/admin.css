@@ -1,0 +1,162 @@
+:root {
+    --storm-chases-toggle-bg-off: #a7aaad;
+    --storm-chases-toggle-bg-on: #2271b1;
+    --storm-chases-toggle-knob: #ffffff;
+    --storm-chases-toggle-shadow: 0 0 12px rgba(0, 0, 0, 0.15) inset;
+    --storm-chases-font-size: 14px;
+    --storm-chases-input-width: 300px;
+    --storm-chases-font: 'Open Sans', sans-serif;
+}
+
+/* Toggle Switch Styles */
+.storm-chases-toggle {
+    appearance: none;
+    width: 36px;
+    height: 18px;
+    position: relative;
+    border: 0;
+    outline: 0;
+    cursor: pointer;
+    margin: 0 4px;
+    background: none;
+    box-shadow: none;
+}
+
+.storm-chases-toggle:focus {
+    outline: 2px solid var(--storm-chases-toggle-bg-on);
+}
+
+.storm-chases-toggle:after {
+    content: '';
+    width: 36px;
+    height: 18px;
+    display: block;
+    background: var(--storm-chases-toggle-bg-off);
+    border-radius: 72px;
+    box-shadow: var(--storm-chases-toggle-shadow);
+    transition: background 0.15s ease;
+}
+
+.storm-chases-toggle:before {
+    content: '';
+    width: 14px;
+    height: 14px;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    background: var(--storm-chases-toggle-knob);
+    border-radius: 50%;
+    transition: left 0.15s ease;
+}
+
+.storm-chases-toggle:checked:after {
+    content: 'ON';
+    color: #ffffff;
+    text-indent: -14px;
+    line-height: 18px;
+    font-size: var(--storm-chases-font-size);
+    font-weight: 400;
+    background: var(--storm-chases-toggle-bg-on);
+}
+
+.storm-chases-toggle:checked:before {
+    left: 20px;
+}
+
+/* Meta Box Styles */
+.storm-chases-meta-box {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--storm-chases-font);
+    font-size: var(--storm-chases-font-size);
+}
+
+.storm-chases-meta-box th {
+    text-align: left;
+    padding: 10px;
+    vertical-align: top;
+}
+
+.storm-chases-meta-box td {
+    padding: 10px;
+}
+
+.storm-chases-meta-box input[type="text"],
+.storm-chases-meta-box input[type="number"],
+.storm-chases-meta-box textarea,
+.storm-chases-meta-box select {
+    width: var(--storm-chases-input-width);
+    box-sizing: border-box;
+    margin-top: 5px;
+}
+
+.storm-chases-meta-box textarea {
+    height: 100px;
+}
+
+.tornado-entry {
+    margin-bottom: 20px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
+}
+
+.tornado-entry label {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.tornado-entry input,
+.tornado-entry select {
+    margin-top: 5px;
+}
+
+.tornado-photo-url {
+    width: var(--storm-chases-input-width);
+    margin-right: 10px;
+}
+
+.upload-tornado-photo-button {
+    vertical-align: middle;
+}
+
+/* Settings Page Styles */
+.form-table {
+    font-family: var(--storm-chases-font);
+    font-size: var(--storm-chases-font-size);
+}
+
+.form-table th {
+    padding: 10px;
+    vertical-align: top;
+}
+
+.form-table td {
+    padding: 10px;
+}
+
+.form-table input[type="file"] {
+    width: var(--storm-chases-input-width);
+}
+
+.form-table .description {
+    font-style: italic;
+    color: #666;
+}
+
+/* Notice Styles */
+.storm-chases-notice {
+    padding: 10px;
+    margin: 10px 0;
+    border-left: 4px solid;
+}
+
+.storm-chases-notice.success {
+    border-color: #46b450;
+    background: #f0fff0;
+}
+
+.storm-chases-notice.error {
+    border-color: #dc3232;
+    background: #fff0f0;
+}

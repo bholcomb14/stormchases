@@ -1,0 +1,171 @@
+:root {
+    --storm-chases-font: 'Open Sans', sans-serif;
+    --storm-chases-font-size: 16px;
+    --storm-chases-primary-color: #2271b1;
+    --storm-chases-secondary-color: #f9f9f9;
+    --storm-chases-border-color: #ddd;
+}
+
+/* General Styles */
+#chase-details {
+    font-family: var(--storm-chases-font);
+    font-size: var(--storm-chases-font-size);
+    margin-bottom: 20px;
+}
+
+#chase-details ul {
+    list-style: none;
+    padding: 0;
+}
+
+#chase-details li {
+    margin-bottom: 10px;
+}
+
+#chase-details h2 {
+    color: var(--storm-chases-primary-color);
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+.modal-content {
+    position: relative;
+    z-index: 2;
+    background-color: #fff;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid var(--storm-chases-border-color);
+    width: 80%;
+    max-width: 600px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    font-family: var(--storm-chases-font);
+}
+
+.modal-content p {
+    margin: 10px 0;
+    line-height: 1.5;
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    color: var(--storm-chases-primary-color);
+}
+
+.modal-close {
+    color: #666;
+    float: right;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.modal-close:hover,
+.modal-close:focus {
+    color: #000;
+    text-decoration: none;
+}
+
+.tornado-map,
+.report-map {
+    margin: 15px 0;
+    border: 1px solid var(--storm-chases-border-color);
+    height: 200px;
+    width: 100%;
+    max-width: 600px;
+}
+
+.tornado-photo,
+.report-photo {
+    max-width: 100%;
+    height: auto;
+    margin: 15px 0;
+    display: block;
+    border: 1px solid var(--storm-chases-border-color);
+    border-radius: 4px;
+}
+
+/* Navigation Styles */
+.storm-chase-navigation {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+    font-family: var(--storm-chases-font);
+}
+
+.storm-chase-navigation a {
+    color: var(--storm-chases-primary-color);
+    text-decoration: none;
+}
+
+.storm-chase-navigation a:hover {
+    text-decoration: underline;
+}
+
+.nav-arrow {
+    font-size: 1.2em;
+}
+
+/* Archive and Stats Styles */
+.storm-chase-archive,
+.storm-chases-stats,
+.storm-chases-tornadoes {
+    font-family: var(--storm-chases-font);
+    font-size: var(--storm-chases-font-size);
+}
+
+.storm-chase-archive li,
+.storm-chases-stats li,
+.storm-chases-tornadoes li {
+    margin-bottom: 10px;
+}
+
+.storm-chase-archive a,
+.storm-chases-tornadoes a {
+    color: var(--storm-chases-primary-color);
+    text-decoration: none;
+}
+
+.storm-chase-archive a:hover,
+.storm-chases-tornadoes a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive Design */
+@media (max-width: 600px) {
+    .modal-content {
+        width: 90%;
+        margin: 10% auto;
+    }
+
+    .storm-chase-navigation {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .tornado-map,
+    .report-map {
+        height: 150px;
+    }
+}
