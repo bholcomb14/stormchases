@@ -95,8 +95,7 @@
 }
 
 .tornado-entry {
-    margin-bottom: 20px;
-    padding: 10px;
+    margin-bottom: 10px;
     border: 1px solid #ddd;
     background: #f9f9f9;
 }
@@ -111,9 +110,110 @@
     margin-top: 5px;
 }
 
+.tornado-entry-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #f0f0f1;
+    border-bottom: 1px solid #ddd;
+}
+
+.tornado-entry.is-collapsed .tornado-entry-header {
+    border-bottom: none;
+}
+
+.tornado-entry.is-collapsed .tornado-entry-body {
+    display: none;
+}
+
+.tornado-drag-handle {
+    cursor: move;
+    color: #888;
+    flex: 0 0 auto;
+}
+
+.tornado-entry-header .button-link {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+.tornado-entry-header .button-link:disabled,
+.tornado-entry-header .button-link[disabled] {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.tornado-entry-header .remove-tornado {
+    color: #a00;
+}
+
+.tornado-entry-summary {
+    flex: 1 1 auto;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    margin: 0;
+    font-weight: 600;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tornado-entry-body {
+    padding: 10px 12px;
+}
+
+.tornado-done {
+    margin-top: 6px;
+}
+
+.tornado-entry.ui-sortable-helper {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.tornado-entry-placeholder {
+    margin-bottom: 10px;
+    border: 2px dashed #bbb;
+    background: #f0f0f0;
+    min-height: 40px;
+}
+
 .tornado-photo-url {
     width: var(--storm-chases-input-width);
     margin-right: 10px;
+}
+
+.storm-chases-milestone-list {
+    margin-bottom: 8px;
+}
+
+.chasems-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.chasems-bullet {
+    flex: 0 0 auto;
+    color: #888;
+}
+
+.chasems-item input[type="text"] {
+    flex: 1 1 auto;
+}
+
+.chasems-item .remove-milestone {
+    flex: 0 0 auto;
+    color: #a00;
 }
 
 .upload-tornado-photo-button {
@@ -159,4 +259,187 @@
 .storm-chases-notice.error {
     border-color: #dc3232;
     background: #fff0f0;
+}
+
+.storm-chases-notice.info {
+    border-color: #00a0d2;
+    background: #f0f8ff;
+}
+
+/* -----------------------------------------------------------------------
+   Spotter Network CSV upload section
+   ----------------------------------------------------------------------- */
+.sc-upload-help {
+    max-width: 700px;
+    margin-bottom: 16px;
+}
+
+.sc-upload-details summary {
+    cursor: pointer;
+    color: var(--storm-chases-toggle-bg-on);
+    font-weight: 600;
+    margin: 8px 0;
+}
+
+.sc-upload-details-body {
+    padding: 12px 16px;
+    background: #f9f9f9;
+    border-left: 3px solid var(--storm-chases-toggle-bg-on);
+    margin-top: 4px;
+}
+
+.sc-upload-details-body code {
+    display: block;
+    margin: 8px 0;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid #ddd;
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.sc-file-drop-zone {
+    position: relative;
+    display: inline-block;
+    min-width: 360px;
+    max-width: 500px;
+    padding: 24px 20px;
+    border: 2px dashed #a7aaad;
+    border-radius: 4px;
+    background: #fafafa;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.sc-file-drop-zone:hover,
+.sc-file-drop-zone.sc-drag-over {
+    border-color: var(--storm-chases-toggle-bg-on);
+    background: #f0f6ff;
+}
+
+.sc-file-drop-zone.sc-file-selected {
+    border-color: #46b450;
+    background: #f0fff0;
+}
+
+.sc-file-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+}
+
+.sc-file-drop-label {
+    pointer-events: none;
+}
+
+.sc-upload-icon {
+    font-size: 28px;
+    color: #a7aaad;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.sc-file-drop-text {
+    display: block;
+    color: #555;
+    font-size: 13px;
+}
+
+.sc-file-name {
+    display: block;
+    margin-top: 8px;
+    font-weight: 600;
+    color: #333;
+    font-size: 13px;
+}
+
+/* Progress bar for GPS track upload */
+.sc-progress-bar {
+    height: 8px;
+    background: #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+.sc-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--storm-chases-toggle-bg-on);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+.sc-progress-label {
+    font-size: 12px;
+    color: #555;
+    font-family: var(--storm-chases-font);
+}
+
+/* Tornado location picker modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 100000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+.modal-content {
+    position: relative;
+    z-index: 2;
+    background-color: #fff;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #ddd;
+    width: 90%;
+    max-width: 700px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    font-family: var(--storm-chases-font);
+}
+
+.modal-content h3 {
+    margin-top: 0;
+}
+
+.modal-close {
+    color: #666;
+    float: right;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.modal-close:hover,
+.modal-close:focus {
+    color: #000;
+}
+
+.sc-location-picker-map {
+    height: 400px;
+    width: 100%;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+}
+
+.sc-location-picker-readout {
+    font-family: var(--storm-chases-font);
+    margin-bottom: 10px;
 }

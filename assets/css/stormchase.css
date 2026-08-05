@@ -22,6 +22,16 @@
     margin-bottom: 10px;
 }
 
+#chase-details ul.sc-milestones-list {
+    list-style: disc;
+    padding-left: 22px;
+    margin: 6px 0 10px;
+}
+
+#chase-details ul.sc-milestones-list li {
+    margin-bottom: 4px;
+}
+
 #chase-details h2 {
     color: var(--storm-chases-primary-color);
 }
@@ -168,4 +178,177 @@
     .report-map {
         height: 150px;
     }
+}
+
+/* -----------------------------------------------------------------------
+   Map shortcodes: [sc_tornado_map] and [sc_reports]
+   ----------------------------------------------------------------------- */
+.sc-map-shortcode {
+    margin: 20px 0;
+    font-family: var(--storm-chases-font);
+    font-size: var(--storm-chases-font-size);
+}
+
+.sc-map-shortcode h2 {
+    color: var(--storm-chases-primary-color);
+}
+
+.sc-leaflet-map {
+    border: 1px solid var(--storm-chases-border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* Reports list */
+.sc-reports-list {
+    margin-top: 20px;
+}
+
+.sc-reports-list h3 {
+    color: var(--storm-chases-primary-color);
+}
+
+.sc-reports-list ol {
+    padding-left: 20px;
+}
+
+.sc-reports-list li {
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.sc-report-link {
+    color: var(--storm-chases-primary-color);
+    text-decoration: none;
+}
+
+.sc-report-link:hover {
+    text-decoration: underline;
+}
+
+/* Map modals (shared with existing .modal, just a marker class) */
+.sc-map-modal {
+    background-color: transparent;
+}
+
+.sc-map-modal .modal-content {
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+/* Modal popped up next to a clicked map marker instead of centered on screen */
+.sc-modal-positioned .modal-content {
+    position: fixed;
+    margin: 0;
+    width: auto;
+    max-width: 280px;
+}
+
+@media (max-width: 600px) {
+    .sc-leaflet-map {
+        height: 300px !important;
+    }
+}
+
+/* Fill the screen when the map container is toggled fullscreen (Leaflet custom
+   control, or Google Maps' own built-in one) — overrides the inline height/width
+   the shortcode sets on the container. */
+.sc-leaflet-map:fullscreen,
+.sc-leaflet-map:-webkit-full-screen,
+.sc-leaflet-map:-ms-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+}
+
+.sc-map-fullscreen-btn {
+    font-size: 16px;
+    line-height: 26px !important;
+}
+
+/* Marker hover label (tornado/report name) — bigger and bolder than Leaflet's default tooltip */
+.sc-marker-tooltip {
+    font-size: 14px;
+    font-weight: 700;
+}
+
+/* Icon legend under [sc_tornado_map] (EF ratings) and [sc_reports] (report types) */
+.sc-map-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    margin: 0 0 20px;
+    font-family: var(--storm-chases-font);
+    font-size: 13px;
+    color: #444;
+}
+
+.sc-map-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.sc-map-legend-icon {
+    width: 18px;
+    height: 16px;
+    display: block;
+}
+
+/* -----------------------------------------------------------------------
+   Chase track timeline slider
+   ----------------------------------------------------------------------- */
+.sc-track-timeline {
+    background: #f5f5f5;
+    border: 1px solid var(--storm-chases-border-color);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    padding: 10px 14px 8px;
+    box-sizing: border-box;
+}
+
+#sc-track-slider {
+    width: 100%;
+    cursor: pointer;
+    accent-color: #e63946;
+    margin: 0;
+    display: block;
+}
+
+.sc-track-timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #666;
+    font-family: var(--storm-chases-font);
+    user-select: none;
+}
+.sc-track-position {
+    font-size: 11px;
+    color: #333;
+    font-family: monospace;
+    font-weight: 600;
+}
+
+.sc-radar-control {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--storm-chases-border-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-family: var(--storm-chases-font);
+    color: #444;
+}
+
+.sc-radar-control label {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sc-radar-label {
+    font-family: monospace;
+    color: #666;
 }

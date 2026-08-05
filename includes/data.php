@@ -12,12 +12,13 @@ class StormChasesData {
         'chasemiles' => ['sanitize' => 'sanitize_int', 'required' => false, 'type' => 'integer'],
         'chasehail' => ['sanitize' => 'sanitize_float', 'required' => false, 'type' => 'number'],
         'chasewind' => ['sanitize' => 'sanitize_int', 'required' => false, 'type' => 'integer'],
-        'chasems' => ['sanitize' => 'sanitize_textarea_field', 'required' => false, 'type' => 'string'],
+        'chasems' => ['sanitize' => 'sanitize_milestones', 'required' => false, 'type' => 'array', 'default' => []],
         'chasemap_id' => ['sanitize' => 'sanitize_int', 'required' => false, 'type' => 'integer'],
         'chasemaptype' => ['sanitize' => 'sanitize_text_field', 'required' => false, 'type' => 'string'],
         'chasetornado' => ['sanitize' => 'sanitize_int', 'required' => false, 'type' => 'integer'],
         'tornadoes' => ['sanitize' => 'sanitize_tornado_data', 'required' => false, 'type' => 'array'],
         'spotter_reports' => ['sanitize' => 'sanitize_spotter_reports', 'required' => false, 'type' => 'array'],
+        'chasemap_track' => ['sanitize' => 'sanitize_track', 'required' => false, 'type' => 'array'],
     ];
 
     public function get_meta_fields() {
@@ -54,12 +55,13 @@ class StormChasesData {
             'chasemiles' => 0,
             'chasehail' => 0,
             'chasewind' => 0,
-            'chasems' => '',
+            'chasems' => [],
             'chasemap_id' => 0,
             'chasemaptype' => '0',
             'chasetornado' => 0,
             'tornadoes' => [],
             'spotter_reports' => [],
+            'chasemap_track' => [],
         ];
 
         $chase_data = wp_parse_args($chase_data, $defaults);
@@ -120,6 +122,7 @@ class StormChasesData {
 
         $sanitized['tornadoes'] = isset($data['tornadoes']) && is_array($data['tornadoes']) ? $this->sanitize_tornado_data($data['tornadoes']) : [];
         $sanitized['spotter_reports'] = isset($data['spotter_reports']) && is_array($data['spotter_reports']) ? $this->sanitize_spotter_reports($data['spotter_reports']) : [];
+        $sanitized['chasemap_track'] = isset($data['chasemap_track']) && is_array($data['chasemap_track']) ? $this->sanitize_track($data['chasemap_track']) : [];
 
         return wp_parse_args($sanitized, [
             'chasedate' => '19700213',
@@ -129,7 +132,7 @@ class StormChasesData {
             'chasemiles' => 0,
             'chasehail' => 0,
             'chasewind' => 0,
-            'chasems' => '',
+            'chasems' => [],
             'chasemap_id' => 0,
             'chasemaptype' => '0',
             'chasetornado' => 0,
@@ -234,6 +237,64 @@ class StormChasesData {
         }
 
         return $sanitized;
+    }
+
+    public function sanitize_track($track): array {
+        if (!is_array($track)) {
+            return [];
+        }
+        $out = [];
+        foreach ($track as $pt) {
+            if ($pt === null) {
+                // Preserve gap sentinel, but skip consecutive or leading nulls
+                if (!empty($out) && end($out) !== null) {
+                    $out[] = null;
+                }
+                continue;
+            }
+            if (!is_array($pt) || count($pt) < 2) {
+                continue;
+            }
+            $lat = round(floatval($pt[0]), 5);
+            $lon = round(floatval($pt[1]), 5);
+            if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
+                continue;
+            }
+            if ($lat === 0.0 && $lon === 0.0) {
+                continue;
+            }
+            // Timestamp (Unix seconds, UTC) if the source had one — used to sync the
+            // historical radar overlay to where the track was at a given moment.
+            $ts = isset($pt[2]) && is_numeric($pt[2]) ? (int) $pt[2] : null;
+            $out[] = [$lat, $lon, $ts];
+        }
+        // Strip trailing null
+        while (!empty($out) && end($out) === null) {
+            array_pop($out);
+        }
+        return $out;
+    }
+
+    // Accepts either a new-format array of bullet strings or a legacy single
+    // freeform string (pre-1.9.0), migrating the latter into a one-item list
+    // rather than losing or auto-splitting existing content.
+    public function sanitize_milestones($value): array {
+        if (is_string($value)) {
+            $value = trim($value) !== '' ? [$value] : [];
+        }
+        if (!is_array($value)) {
+            return [];
+        }
+        $out = [];
+        foreach ($value as $item) {
+            $item = is_string($item) ? wp_unslash($item) : (string) $item;
+            $item = str_replace(["\r", "\n"], ' ', $item);
+            $item = sanitize_text_field($item);
+            if ($item !== '') {
+                $out[] = $item;
+            }
+        }
+        return $out;
     }
 
     public function sanitize_int($value) {

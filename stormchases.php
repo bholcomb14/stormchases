@@ -2,7 +2,7 @@
 /*
 Plugin Name: StormChases
 Description: Plugin to allow a storm chaser to create chase logs.
-Version:     1.7.0
+Version:     1.9.0
 Author:      Ben Holcomb
 Author URI:  https://www.benholcomb.com
 License:     GPL2
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 // Define plugin constants
 define('STORM_CHASES_DIR', plugin_dir_path(__FILE__));
 define('STORM_CHASES_URL', plugin_dir_url(__FILE__));
-define('STORM_CHASES_VERSION', '1.7.0');
+define('STORM_CHASES_VERSION', '1.9.0');
 
 if (!class_exists('Storm_Chases')) {
     class Storm_Chases {
@@ -26,6 +26,7 @@ if (!class_exists('Storm_Chases')) {
             require_once STORM_CHASES_DIR . 'includes/functions.php';
             require_once STORM_CHASES_DIR . 'includes/settings.php';
             require_once STORM_CHASES_DIR . 'includes/post-types/storm_chase.php';
+            require_once STORM_CHASES_DIR . 'includes/blocks.php';
 
             new Storm_Chases_Settings();
             new StormChaseTemplate();
@@ -43,12 +44,23 @@ if (!class_exists('Storm_Chases')) {
             }
 
             wp_enqueue_script('jquery-ui-datepicker');
+            wp_enqueue_script('jquery-ui-sortable');
             wp_enqueue_style('jquery-ui', '//ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/base/jquery-ui.css', [], '1.12.1');
+
+            $admin_deps = ['jquery', 'jquery-ui-datepicker', 'jquery-ui-sortable', 'wp-mediaelement', 'wp-data'];
+
+            // Leaflet powers the "pick location on map" tornado lat/lon picker — only
+            // needed on the post edit screen, not the settings page.
+            if (in_array($hook, ['post.php', 'post-new.php'])) {
+                wp_enqueue_style('leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', [], '1.9.4');
+                wp_enqueue_script('leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', [], '1.9.4', true);
+                $admin_deps[] = 'leaflet';
+            }
 
             wp_enqueue_script(
                 'storm-chases-admin',
                 STORM_CHASES_URL . 'assets/js/admin.js',
-                ['jquery', 'jquery-ui-datepicker', 'wp-mediaelement'],
+                $admin_deps,
                 STORM_CHASES_VERSION,
                 true
             );
@@ -59,6 +71,8 @@ if (!class_exists('Storm_Chases')) {
                 'ajaxUrl' => esc_url_raw(admin_url('admin-ajax.php')),
                 'maxFileSize' => absint(get_option('storm_chases_max_file_size', 10 * 1024 * 1024)),
                 'supportedFileTypes' => array_map('esc_attr', get_option('storm_chases_supported_file_types', ['image/jpeg', 'image/png', 'image/gif', 'application/vnd.google-earth.kml+xml'])),
+                'windshieldNonce' => wp_create_nonce('storm_chases_windshield_nonce'),
+                'privacyNonce'    => wp_create_nonce('storm_chases_privacy_nonce'),
             ];
 
             if (in_array($hook, ['post.php', 'post-new.php'])) {
@@ -95,45 +109,42 @@ if (!class_exists('Storm_Chases')) {
             ob_start();
             ?>
             <div class="tornado-entry">
-                <label><?php esc_html_e('Name', 'stormchases'); ?> <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][name]"></label>
-                <label><?php esc_html_e('Latitude', 'stormchases'); ?> <input type="number" name="tornadoes[<?php echo esc_attr($index); ?>][lat]" step="0.0001"></label>
-                <label><?php esc_html_e('Longitude', 'stormchases'); ?> <input type="number" name="tornadoes[<?php echo esc_attr($index); ?>][lon]" step="0.0001"></label>
-                <label><?php esc_html_e('Media URL', 'stormchases'); ?> <input type="url" name="tornadoes[<?php echo esc_attr($index); ?>][media_url]" pattern="^\/[\w\/-]+\.(mp4|webm|ogg)$"></label>
-                <label><input type="checkbox" name="tornadoes[<?php echo esc_attr($index); ?>][photogenic]"> <?php esc_html_e('Photogenic', 'stormchases'); ?></label>
-                <label>
-                    <?php esc_html_e('Tornado Photo', 'stormchases'); ?>
-                    <input type="hidden" name="tornadoes[<?php echo esc_attr($index); ?>][photo_id]" class="tornado-photo-id">
-                    <input type="text" class="tornado-photo-url" disabled>
-                    <button type="button" class="upload-tornado-photo-button"><?php esc_html_e('Select Tornado Image', 'stormchases'); ?></button>
-                </label>
-                <label>
-                    <?php esc_html_e('EF Rating', 'stormchases'); ?>
-                    <select name="tornadoes[<?php echo esc_attr($index); ?>][ef_rating]">
-                        <?php
-                        $ratings = ['Unrated', 'EF-U', 'EF-0', 'EF-1', 'EF-2', 'EF-3', 'EF-4', 'EF-5'];
-                        foreach ($ratings as $rating) {
-                            echo '<option value="' . esc_attr($rating) . '">' . esc_html($rating) . '</option>';
-                        }
-                        ?>
-                    </select>
-                </label>
-                <label>
-                    <?php esc_html_e('Start Time (HH:MM)', 'stormchases'); ?>
-                    <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][start_time]" pattern="^\d{2}:\d{2}$" required>
-                </label>
-                <label>
-                    <?php esc_html_e('End Time (HH:MM)', 'stormchases'); ?>
-                    <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][end_time]" pattern="^\d{2}:\d{2}$">
-                </label>
-                <label>
-                    <?php esc_html_e('End Latitude', 'stormchases'); ?>
-                    <input type="number" name="tornadoes[<?php echo esc_attr($index); ?>][end_lat]" step="0.0001">
-                </label>
-                <label>
-                    <?php esc_html_e('End Longitude', 'stormchases'); ?>
-                    <input type="number" name="tornadoes[<?php echo esc_attr($index); ?>][end_lon]" step="0.0001">
-                </label>
-                <button type="button" class="remove-tornado"><?php esc_html_e('Remove', 'stormchases'); ?></button>
+                <div class="tornado-entry-header">
+                    <span class="dashicons dashicons-move tornado-drag-handle" title="<?php esc_attr_e('Drag to reorder', 'stormchases'); ?>"></span>
+                    <button type="button" class="button-link tornado-move-up" title="<?php esc_attr_e('Move up', 'stormchases'); ?>"><span class="dashicons dashicons-arrow-up-alt2"></span></button>
+                    <button type="button" class="button-link tornado-move-down" title="<?php esc_attr_e('Move down', 'stormchases'); ?>"><span class="dashicons dashicons-arrow-down-alt2"></span></button>
+                    <button type="button" class="tornado-entry-summary"><?php esc_html_e('Unnamed Tornado — Unrated', 'stormchases'); ?></button>
+                    <button type="button" class="button-link tornado-toggle" title="<?php esc_attr_e('Expand or collapse', 'stormchases'); ?>"><span class="dashicons dashicons-arrow-up-alt2"></span></button>
+                    <button type="button" class="button-link remove-tornado" title="<?php esc_attr_e('Remove tornado', 'stormchases'); ?>"><span class="dashicons dashicons-no-alt"></span></button>
+                </div>
+                <div class="tornado-entry-body">
+                    <label><?php esc_html_e('Name', 'stormchases'); ?> <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][name]" value=""></label>
+                    <label><?php esc_html_e('Latitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][lat]" value="0"></label>
+                    <label><?php esc_html_e('Longitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][lon]" value="0"></label>
+                    <button type="button" class="button tornado-pick-location" data-lat-field="lat" data-lon-field="lon"><?php esc_html_e('📍 Pick Location on Map', 'stormchases'); ?></button>
+                    <label><?php esc_html_e('EF Rating', 'stormchases'); ?>
+                        <select name="tornadoes[<?php echo esc_attr($index); ?>][ef_rating]">
+                            <?php
+                            $ratings = ['Unrated', 'EF-U', 'EF-0', 'EF-1', 'EF-2', 'EF-3', 'EF-4', 'EF-5'];
+                            foreach ($ratings as $rating) {
+                                echo '<option value="' . esc_attr($rating) . '">' . esc_html($rating) . '</option>';
+                            }
+                            ?>
+                        </select>
+                    </label>
+                    <label><?php esc_html_e('Start Time', 'stormchases'); ?> <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][start_time]" value=""></label>
+                    <label><?php esc_html_e('End Time', 'stormchases'); ?> <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][end_time]" value=""></label>
+                    <label><?php esc_html_e('End Latitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][end_lat]" value="0"></label>
+                    <label><?php esc_html_e('End Longitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][end_lon]" value="0"></label>
+                    <button type="button" class="button tornado-pick-location" data-lat-field="end_lat" data-lon-field="end_lon"><?php esc_html_e('📍 Pick End Location on Map', 'stormchases'); ?></button>
+                    <label><?php esc_html_e('Photo', 'stormchases'); ?>
+                        <input type="hidden" class="tornado-photo-id" name="tornadoes[<?php echo esc_attr($index); ?>][photo_id]" value="0">
+                        <input type="text" class="tornado-photo-url" value="" readonly>
+                        <button type="button" class="upload-tornado-photo-button button"><?php esc_html_e('Upload Photo', 'stormchases'); ?></button>
+                    </label>
+                    <label><input type="checkbox" name="tornadoes[<?php echo esc_attr($index); ?>][photogenic]"> <?php esc_html_e('Photogenic', 'stormchases'); ?></label>
+                    <button type="button" class="button tornado-done"><?php esc_html_e('Done', 'stormchases'); ?></button>
+                </div>
             </div>
             <?php
             wp_send_json_success(['entry' => ob_get_clean()]);
