@@ -1391,6 +1391,13 @@ class StormChaseTemplate {
             <?php if ($has_track) : ?>
                 <div id="chasemap" class="sc-leaflet-map sc-track-map" style="height: 400px; width: 100%; max-width: 800px;"></div>
                 <div class="sc-track-timeline" id="sc-track-timeline" style="display:none; max-width: 800px; margin-bottom: 20px;">
+                    <div class="sc-track-playback" id="sc-track-playback">
+                        <button type="button" id="sc-track-play-toggle" class="sc-track-playback-btn" aria-label="<?php esc_attr_e('Play', 'stormchases'); ?>">&#9654;</button>
+                        <button type="button" id="sc-track-speed-down" class="sc-track-playback-btn sc-track-speed-btn" aria-label="<?php esc_attr_e('Slower', 'stormchases'); ?>">&minus;</button>
+                        <span id="sc-track-speed-label" class="sc-track-speed-label">1x</span>
+                        <button type="button" id="sc-track-speed-up" class="sc-track-playback-btn sc-track-speed-btn" aria-label="<?php esc_attr_e('Faster', 'stormchases'); ?>">+</button>
+                        <span id="sc-track-buffer-status" class="sc-track-buffer-status"></span>
+                    </div>
                     <input type="range" id="sc-track-slider" min="1" max="100" value="100">
                     <div class="sc-track-timeline-labels">
                         <span><?php esc_html_e('Start', 'stormchases'); ?></span>
@@ -1399,7 +1406,7 @@ class StormChaseTemplate {
                     </div>
                     <div class="sc-radar-control" id="sc-radar-control" style="display:none;">
                         <label>
-                            <input type="checkbox" id="sc-radar-toggle">
+                            <input type="checkbox" id="sc-radar-toggle" checked>
                             <?php esc_html_e('Show radar (NEXRAD composite)', 'stormchases'); ?>
                         </label>
                         <span id="sc-radar-label" class="sc-radar-label"></span>

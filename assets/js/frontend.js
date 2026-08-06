@@ -341,11 +341,6 @@
         return prev ? prev.ts : (next ? next.ts : null);
     }
 
-    var RADAR_BOUNDS = {
-        n0q: [[23.0, -126.0], [50.0, -65.0]], // [[south, west], [north, east]]
-        n0r: [[24.0, -126.0], [50.0, -66.0]],
-    };
-
     function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
     // Floors a Unix-seconds timestamp to the archive's 5-minute cadence and
@@ -376,22 +371,217 @@
             '/GIS/uscomp/' + product + '_' + p.yyyy + p.mm + p.dd + p.hh + p.mi + '.png';
     }
 
+    // Same archive frame's ESRI world file — see loadAndCropRadar() for why this is
+    // fetched per-request instead of trusting a fixed set of bounds.
+    function radarWldUrl(product, ts) {
+        var p = radarBucketParts(ts);
+        return 'https://mesonet.agron.iastate.edu/archive/data/' + p.yyyy + '/' + p.mm + '/' + p.dd +
+            '/GIS/uscomp/' + product + '_' + p.yyyy + p.mm + p.dd + p.hh + p.mi + '.wld';
+    }
+
     function radarTimeLabel(ts) {
         var p = radarBucketParts(ts);
         return p.hh + ':' + p.mi + ' UTC';
     }
 
+    // The archive's composite images cover the entire continental US (12200x5400px
+    // for n0q). At a chase's typical high zoom level, Leaflet has to CSS-scale that
+    // whole image up to several times its native resolution to keep it correctly
+    // georeferenced (observed as high as ~11000x6000 *CSS* pixels for a single-county
+    // view) — comfortably past common GPU maximum-texture-size limits, which some
+    // browser/driver combinations silently mis-render past rather than erroring on.
+    // The result: the DOM position and the image's own pixel data both check out
+    // correct (confirmed via getBoundingClientRect + direct canvas sampling during
+    // debugging), yet what's actually painted to screen can be visibly offset —
+    // reproduced identically across three unrelated browser/OS combinations.
+    //
+    // Fix: never hand the browser more image than it needs. Crop to a generous but
+    // bounded region around the chase track (client-side, via canvas) before ever
+    // creating the overlay, so its rendered CSS size stays sane regardless of zoom.
+    function trackCropBounds(points, padDeg) {
+        var south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+        points.forEach(function(pt) {
+            var lat = pt[0] !== undefined ? pt[0] : pt.lat;
+            var lon = pt[1] !== undefined ? pt[1] : pt.lng;
+            if (lat < south) south = lat;
+            if (lat > north) north = lat;
+            if (lon < west) west = lon;
+            if (lon > east) east = lon;
+        });
+        return {south: south - padDeg, north: north + padDeg, west: west - padDeg, east: east + padDeg};
+    }
+
+    // Loads the full archive image AND its accompanying .wld world file, crops the
+    // image (canvas) to cropBounds intersected with the image's own real bounds (as
+    // given by the .wld — never assumed), and hands back a small Blob URL + the
+    // crop's own precise bounds — ready to use directly as an L.imageOverlay/
+    // GroundOverlay source.
+    //
+    // The source bounds are read from each frame's own .wld rather than a hardcoded
+    // constant because IEM's n0q composite grid isn't fixed across history: it grew
+    // from 12000x5200px to 12200x5400px sometime between 2014-01-15 and 2014-12-31,
+    // shifting its real extent from south=24.0/east=-66.0 to south=23.0/east=-65.0.
+    // A hardcoded (current-day) extent silently misplaced pre-2014 frames by tens of
+    // miles — exactly the kind of bug this function exists to prevent, so trust the
+    // .wld every time instead of re-guessing a cutover date.
+    function loadAndCropRadar(pngUrl, wldUrl, cropBounds, onReady, onError) {
+        var img = new Image();
+        var wld = null; // {pxW, pxH, originX, originY} once the .wld has loaded
+        var imgReady = false;
+        var settled = false;
+
+        function fail() {
+            if (settled) { return; }
+            settled = true;
+            onError();
+        }
+
+        function proceed() {
+            if (settled || !imgReady || !wld) { return; }
+            try {
+                var srcW = img.naturalWidth, srcH = img.naturalHeight;
+                var sWest = wld.originX, sNorth = wld.originY;
+                var sEast = sWest + srcW * wld.pxW;
+                var sSouth = sNorth + srcH * wld.pxH; // pxH is negative per world-file convention
+                var cWest  = Math.max(sWest, cropBounds.west);
+                var cEast  = Math.min(sEast, cropBounds.east);
+                var cSouth = Math.max(sSouth, cropBounds.south);
+                var cNorth = Math.min(sNorth, cropBounds.north);
+                if (cWest >= cEast || cSouth >= cNorth) { fail(); return; }
+                var sx = Math.round((cWest - sWest) / (sEast - sWest) * srcW);
+                var ex = Math.round((cEast - sWest) / (sEast - sWest) * srcW);
+                var sy = Math.round((sNorth - cNorth) / (sNorth - sSouth) * srcH);
+                var ey = Math.round((sNorth - cSouth) / (sNorth - sSouth) * srcH);
+                var cw = Math.max(1, ex - sx), ch = Math.max(1, ey - sy);
+                var canvas = document.createElement('canvas');
+                canvas.width = cw;
+                canvas.height = ch;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(img, sx, sy, cw, ch, 0, 0, cw, ch);
+                canvas.toBlob(function(blob) {
+                    if (!blob) { fail(); return; }
+                    settled = true;
+                    onReady(URL.createObjectURL(blob), [[cSouth, cWest], [cNorth, cEast]]);
+                });
+            } catch (e) {
+                fail();
+            }
+        }
+
+        img.crossOrigin = 'anonymous';
+        img.onload = function() { imgReady = true; proceed(); };
+        img.onerror = fail;
+        img.src = pngUrl;
+
+        fetch(wldUrl).then(function(resp) {
+            if (!resp.ok) { throw new Error('wld fetch failed: ' + resp.status); }
+            return resp.text();
+        }).then(function(text) {
+            var nums = text.trim().split(/\s+/).map(parseFloat);
+            if (nums.length < 6 || nums.some(isNaN)) { throw new Error('malformed wld'); }
+            wld = { pxW: nums[0], pxH: nums[3], originX: nums[4], originY: nums[5] };
+            proceed();
+        }).catch(fail);
+    }
+
     // Drives the "Show radar" checkbox + label shared by both map providers.
     // setOverlay(url, bounds)/clearOverlay() are provider-specific callbacks.
-    function createRadarController($toggle, $label, setOverlay, clearOverlay) {
+    // cropBounds ({south,west,north,east}) limits how much of the continental
+    // composite ever gets downloaded/rendered — see loadAndCropRadar() above.
+    //
+    // Two perf measures on top of the crop itself, since cropping still means
+    // downloading a several-MB continental image per distinct frame:
+    //  - FRAME_CACHE: already-fetched-and-cropped frames are kept (as Blob URLs,
+    //    keyed by bucket) for the life of the page, so re-visiting a time you've
+    //    already scrubbed past is instant with zero network cost. Capped at
+    //    FRAME_CACHE_MAX with oldest-inserted eviction (revoking that entry's Blob
+    //    URL) so a very long scrubbing session can't grow this unbounded.
+    //  - FETCH_DEBOUNCE_MS: the label updates immediately on every bucket change
+    //    (cheap, synchronous), but the actual fetch+crop is deferred until the
+    //    position has been stable for a moment — so dragging quickly across many
+    //    buckets doesn't fire (and immediately discard) a fetch for every one of
+    //    them, only for the bucket the user actually settles on. Cache hits bypass
+    //    the debounce entirely since they're free.
+    //
+    // Dragging can still land back-to-back fetches close enough together to race
+    // (e.g. two deliberate slow drags less than FETCH_DEBOUNCE_MS apart) — requestSeq
+    // guards against a slower *earlier* request finishing after a faster *later* one
+    // and clobbering it. Bumped on every new request; each async callback checks it
+    // still matches before applying its result or caching it, so only the most
+    // recently *issued* request is ever allowed to actually paint the overlay,
+    // regardless of load order.
+    var FRAME_CACHE_MAX = 48;
+    var FETCH_DEBOUNCE_MS = 150;
+
+    function createRadarController($toggle, $label, setOverlay, clearOverlay, cropBounds) {
         var lastBucket = null;
         var lastTs = null;
+        var requestSeq = 0;
+        var debounceTimer = null;
+        var frameCache = new Map(); // bucket -> {blobUrl, bounds}
+
+        // Claims the cache slot for bucket, or — if a concurrent fetch for the same
+        // bucket (e.g. a playback prefetch racing the normal debounced fetch) already
+        // won it — discards this duplicate blob and returns the existing entry instead.
+        // Always use the returned entry, never the blobUrl/bounds passed in directly,
+        // since those may have just been revoked.
+        function claimCacheSlot(bucket, blobUrl, bounds) {
+            var existing = frameCache.get(bucket);
+            if (existing) { URL.revokeObjectURL(blobUrl); return existing; }
+            var entry = { blobUrl: blobUrl, bounds: bounds };
+            frameCache.set(bucket, entry);
+            if (frameCache.size > FRAME_CACHE_MAX) {
+                var oldestKey = frameCache.keys().next().value;
+                URL.revokeObjectURL(frameCache.get(oldestKey).blobUrl);
+                frameCache.delete(oldestKey);
+            }
+            return entry;
+        }
+
+        function cancelPendingFetch() {
+            if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+        }
+
+        // Fetches+crops one frame and caches it. If apply is true, also paints it via
+        // setOverlay once ready (guarded by mySeq so a request superseded by a newer
+        // one never paints) — used by both update() (apply=true) and prefetch()
+        // (apply=false, just populates the cache for later). onDone(success) always
+        // fires exactly once.
+        function fetchFrame(bucket, ts, mySeq, apply, onDone) {
+            var urlQ = radarBucketUrl('n0q', ts);
+            var wldQ = radarWldUrl('n0q', ts);
+            loadAndCropRadar(urlQ, wldQ, cropBounds, function(blobUrl, bounds) {
+                if (apply && mySeq !== requestSeq) { URL.revokeObjectURL(blobUrl); onDone(false); return; }
+                var entry = claimCacheSlot(bucket, blobUrl, bounds);
+                if (apply) { setOverlay(entry.blobUrl, entry.bounds); }
+                onDone(true);
+            }, function() {
+                if (apply && mySeq !== requestSeq) { onDone(false); return; }
+                var urlR = radarBucketUrl('n0r', ts);
+                var wldR = radarWldUrl('n0r', ts);
+                loadAndCropRadar(urlR, wldR, cropBounds, function(blobUrl, bounds) {
+                    if (apply && mySeq !== requestSeq) { URL.revokeObjectURL(blobUrl); onDone(false); return; }
+                    var entry = claimCacheSlot(bucket, blobUrl, bounds);
+                    if (apply) { setOverlay(entry.blobUrl, entry.bounds); }
+                    onDone(true);
+                }, function() {
+                    if (apply && mySeq !== requestSeq) { onDone(false); return; }
+                    if (apply) {
+                        clearOverlay();
+                        $label.text('Radar: unavailable for this time');
+                    }
+                    onDone(false);
+                });
+            });
+        }
 
         function update(ts) {
             lastTs = ts;
             if (!$toggle.is(':checked') || !ts) {
+                cancelPendingFetch();
                 if (lastBucket !== null) { clearOverlay(); lastBucket = null; }
                 $label.text('');
+                requestSeq++;
                 return;
             }
             var bucket = radarBucketKey(ts);
@@ -399,27 +589,46 @@
             lastBucket = bucket;
             $label.text('Radar: ' + radarTimeLabel(ts));
 
-            var urlQ = radarBucketUrl('n0q', ts);
-            var probeQ = new Image();
-            probeQ.onload = function() { setOverlay(urlQ, RADAR_BOUNDS.n0q); };
-            probeQ.onerror = function() {
-                var urlR = radarBucketUrl('n0r', ts);
-                var probeR = new Image();
-                probeR.onload = function() { setOverlay(urlR, RADAR_BOUNDS.n0r); };
-                probeR.onerror = function() {
-                    clearOverlay();
-                    $label.text('Radar: unavailable for this time');
-                };
-                probeR.src = urlR;
-            };
-            probeQ.src = urlQ;
+            cancelPendingFetch();
+
+            var cached = frameCache.get(bucket);
+            if (cached) {
+                requestSeq++; // invalidate any still-in-flight fetch for a previous bucket
+                setOverlay(cached.blobUrl, cached.bounds);
+                return;
+            }
+
+            var mySeq = ++requestSeq;
+            debounceTimer = setTimeout(function() {
+                debounceTimer = null;
+                fetchFrame(bucket, ts, mySeq, true, function() {});
+            }, FETCH_DEBOUNCE_MS);
         }
 
+        // Fetches+caches a frame WITHOUT displaying it — for playback buffering, so a
+        // run of upcoming frames can be downloaded ahead of when they're actually
+        // needed. No-ops immediately (success) if already cached.
+        function prefetch(ts, onDone) {
+            if (!ts) { onDone(false); return; }
+            var bucket = radarBucketKey(ts);
+            if (frameCache.has(bucket)) { onDone(true); return; }
+            fetchFrame(bucket, ts, 0, false, onDone);
+        }
+
+        function isCached(ts) {
+            return !!ts && frameCache.has(radarBucketKey(ts));
+        }
+
+        update.prefetch = prefetch;
+        update.isCached = isCached;
+
         $toggle.on('change', function() {
+            cancelPendingFetch();
             if (!$toggle.is(':checked')) {
                 clearOverlay();
                 lastBucket = null;
                 $label.text('');
+                requestSeq++;
             } else {
                 lastBucket = null; // force a redraw at the current position
                 update(lastTs);
@@ -526,7 +735,8 @@
                 },
                 function clearOverlay() {
                     if (radarLayer) { map.removeLayer(radarLayer); radarLayer = null; }
-                }
+                },
+                trackCropBounds(pi.points, 2)
             );
         }
 
@@ -540,7 +750,7 @@
             carMarker.setIcon(leafletArrowIcon(idx > 0 ? trackBearing(pi.points[idx - 1], pi.points[idx]) : 0));
             updatePositionLabel(pi.points[idx], idx, pi.points.length);
             updateRadar(pointTimestamp(idx));
-        });
+        }, pointTimestamp, updateRadar);
         updatePositionLabel(pi.points[lastIdx], lastIdx, pi.points.length);
         updateRadar(pointTimestamp(lastIdx));
     }
@@ -612,7 +822,8 @@
                 },
                 function clearOverlay() {
                     if (radarOverlay) { radarOverlay.setMap(null); radarOverlay = null; }
-                }
+                },
+                trackCropBounds(pi.points, 2)
             );
         }
 
@@ -626,7 +837,7 @@
             carMarker.setIcon(googleArrowSymbol(idx > 0 ? trackBearing(pi.points[idx - 1], pi.points[idx]) : 0));
             updatePositionLabel(pi.points[idx], idx, pi.points.length);
             updateRadar(pointTimestamp(idx));
-        });
+        }, pointTimestamp, updateRadar);
         updatePositionLabel(pi.points[lastIdx], lastIdx, pi.points.length);
         updateRadar(pointTimestamp(lastIdx));
     }
@@ -673,7 +884,24 @@
         $label.text(pct + '%');
     }
 
-    function setupTrackSlider(rawTrack, points, updateFn) {
+    // Playback speed multipliers cycled through by the +/- buttons. Tick interval is
+    // fixed; speed instead scales how many track points are advanced per tick, so a
+    // slower/denser (more-point) track and a faster/sparser one both still play back
+    // over roughly the same real-world duration at a given speed.
+    var PLAYBACK_SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+    var PLAYBACK_TICK_MS = 80;
+    var PLAYBACK_DEFAULT_DURATION_MS = 60000; // ~1 minute to play a full track at 1x
+
+    // How many upcoming distinct radar frames playback tries to keep pre-cached.
+    // Only ever downloaded once Play is actually pressed (or playback catches up to
+    // the edge of what's buffered) — never preloaded just from viewing the page.
+    var PLAYBACK_LOOKAHEAD_BUCKETS = 6;
+    // Safety cap so a dead/very slow connection can't hang the initial buffering
+    // step forever — playback starts anyway after this, same as it would have
+    // before buffering existed (frames just load a bit late, one at a time).
+    var PLAYBACK_BUFFER_TIMEOUT_MS = 15000;
+
+    function setupTrackSlider(rawTrack, points, updateFn, pointTimestampFn, radarUpdateFn) {
         var $timeline = $('#sc-track-timeline');
         var $slider   = $('#sc-track-slider');
         // points is the non-null list; slider range = number of actual GPS points
@@ -684,14 +912,191 @@
         $timeline.show();
 
         var raf = null;
-        $slider.on('input', function() {
-            var idx = parseInt(this.value, 10);
+        function applyIdx(idx) {
             if (raf) { cancelAnimationFrame(raf); }
             raf = requestAnimationFrame(function() {
                 updateFn(idx);
                 raf = null;
             });
+        }
+
+        $slider.on('input', function() {
+            stopPlayback();
+            applyIdx(parseInt(this.value, 10));
         });
+
+        // Playback controls (optional — only wired up if the markup is present).
+        var $playToggle    = $('#sc-track-play-toggle');
+        var $speedDown     = $('#sc-track-speed-down');
+        var $speedUp       = $('#sc-track-speed-up');
+        var $speedLabel    = $('#sc-track-speed-label');
+        var $bufferStatus  = $('#sc-track-buffer-status');
+        var $radarToggle   = $('#sc-radar-toggle');
+        if (!$playToggle.length) { return; }
+
+        var speedIdx       = PLAYBACK_SPEEDS.indexOf(1);
+        var baseStep       = Math.max(1, Math.round(points.length / (PLAYBACK_DEFAULT_DURATION_MS / PLAYBACK_TICK_MS)));
+        var playTimer      = null;
+        var buffering      = false;
+        var playGeneration = 0; // bumped on any user-initiated stop, to cancel a stale buffering resume
+        var topUpInFlight  = false;
+
+        function currentStep() {
+            return Math.max(1, Math.round(baseStep * PLAYBACK_SPEEDS[speedIdx]));
+        }
+
+        function radarBufferingEnabled() {
+            return !!(radarUpdateFn && typeof radarUpdateFn.prefetch === 'function' &&
+                pointTimestampFn && $radarToggle.length && $radarToggle.is(':checked'));
+        }
+
+        function setBufferStatus(text) {
+            if ($bufferStatus.length) { $bufferStatus.text(text); }
+        }
+
+        // Distinct upcoming radar timestamps (deduped by 5-minute bucket) that
+        // playback would actually touch starting at fromIdx with the given step.
+        function upcomingTimestamps(fromIdx, step, maxCount) {
+            var out = [];
+            var lastBucket = null;
+            for (var idx = fromIdx; idx <= lastIdx; idx += step) {
+                var ts = pointTimestampFn(idx);
+                if (!ts) { continue; }
+                var bucket = radarBucketKey(ts);
+                if (bucket !== lastBucket) {
+                    lastBucket = bucket;
+                    out.push(ts);
+                    if (out.length >= maxCount) { break; }
+                }
+                if (idx === lastIdx) { break; }
+            }
+            return out;
+        }
+
+        // Buffers upcoming frames (showing progress via the status text; the
+        // Play/Pause button stays clickable throughout as a cancel — see the click
+        // handler below) before calling onReady. Resolves immediately if radar
+        // buffering doesn't apply (radar off/unsupported) or everything needed in
+        // the lookahead window is already cached.
+        function bufferAhead(fromIdx, onReady) {
+            if (!radarBufferingEnabled()) { onReady(); return; }
+            var need = upcomingTimestamps(fromIdx, currentStep(), PLAYBACK_LOOKAHEAD_BUCKETS)
+                .filter(function(ts) { return !radarUpdateFn.isCached(ts); });
+            if (!need.length) { onReady(); return; }
+
+            var myGen  = playGeneration;
+            var done   = false;
+            var timeoutTimer = setTimeout(finish, PLAYBACK_BUFFER_TIMEOUT_MS);
+
+            function finish() {
+                if (done) { return; }
+                done = true;
+                clearTimeout(timeoutTimer);
+                // A newer buffering pass may have started since this one began (user
+                // cancelled meanwhile) — stopPlayback() already reset the shared
+                // button/status UI in that case, so only touch it here if this is
+                // still the active generation, to avoid clobbering that newer pass.
+                if (myGen === playGeneration) {
+                    buffering = false;
+                    setBufferStatus('');
+                    onReady();
+                }
+            }
+
+            buffering = true;
+            var i = 0;
+            function next() {
+                if (done) { return; }
+                if (myGen !== playGeneration) { finish(); return; } // user cancelled meanwhile
+                if (i >= need.length) { finish(); return; }
+                setBufferStatus('Buffering radar… ' + (i + 1) + '/' + need.length);
+                radarUpdateFn.prefetch(need[i], function() {
+                    i++;
+                    next();
+                });
+            }
+            next();
+        }
+
+        // Fire-and-forget: keeps at most one background prefetch in flight so
+        // playback doesn't fall behind on a fast connection, without hammering a
+        // slow one with a burst of parallel requests.
+        function topUpLookahead(fromIdx) {
+            if (topUpInFlight || !radarBufferingEnabled()) { return; }
+            var need = upcomingTimestamps(fromIdx, currentStep(), PLAYBACK_LOOKAHEAD_BUCKETS)
+                .filter(function(ts) { return !radarUpdateFn.isCached(ts); });
+            if (!need.length) { return; }
+            topUpInFlight = true;
+            radarUpdateFn.prefetch(need[0], function() { topUpInFlight = false; });
+        }
+
+        function updateSpeedLabel() {
+            var s = PLAYBACK_SPEEDS[speedIdx];
+            $speedLabel.text((s < 1 ? s : Math.round(s)) + 'x');
+        }
+
+        function stopPlayback() {
+            playGeneration++;
+            buffering = false;
+            if (playTimer) { clearInterval(playTimer); playTimer = null; }
+            $playToggle.html('&#9654;').attr('aria-label', 'Play');
+            setBufferStatus('');
+        }
+
+        function tick() {
+            var idx  = parseInt($slider.val(), 10);
+            var step = currentStep();
+            var next = Math.min(idx + step, lastIdx);
+            var ts   = pointTimestampFn ? pointTimestampFn(next) : null;
+
+            // Buffer underrun (slow connection catching up) — pause and re-buffer
+            // rather than showing a stale/blank radar frame. The button already
+            // reads "Pause" from when playback started; clicking it now still
+            // correctly cancels, via the buffering flag in the click handler below.
+            if (radarBufferingEnabled() && ts && !radarUpdateFn.isCached(ts)) {
+                if (playTimer) { clearInterval(playTimer); playTimer = null; }
+                bufferAhead(next, function() {
+                    playTimer = setInterval(tick, PLAYBACK_TICK_MS);
+                });
+                return;
+            }
+
+            $slider.val(next);
+            applyIdx(next);
+            if (next >= lastIdx) { stopPlayback(); return; }
+            topUpLookahead(next);
+        }
+
+        function startPlayback() {
+            if (playTimer || buffering) { return; }
+            var myGen = playGeneration;
+            var fromIdx = parseInt($slider.val(), 10);
+            if (fromIdx >= lastIdx) {
+                fromIdx = 1;
+                $slider.val(1);
+                applyIdx(1);
+            }
+            // Shown immediately so the button reads "in progress, click to cancel"
+            // for the whole buffer+play span, not just once actual ticking starts.
+            $playToggle.html('&#10074;&#10074;').attr('aria-label', 'Pause');
+            bufferAhead(fromIdx, function() {
+                if (myGen !== playGeneration || playTimer) { return; }
+                playTimer = setInterval(tick, PLAYBACK_TICK_MS);
+            });
+        }
+
+        $playToggle.on('click', function() {
+            if (playTimer || buffering) { stopPlayback(); } else { startPlayback(); }
+        });
+        $speedDown.on('click', function() {
+            speedIdx = Math.max(0, speedIdx - 1);
+            updateSpeedLabel();
+        });
+        $speedUp.on('click', function() {
+            speedIdx = Math.min(PLAYBACK_SPEEDS.length - 1, speedIdx + 1);
+            updateSpeedLabel();
+        });
+        updateSpeedLabel();
     }
 
     window.StormChases = window.StormChases || {};

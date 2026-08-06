@@ -1,0 +1,29 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 2,
+    "name": "stormchases/chase-stats",
+    "title": "Chase Stats",
+    "category": "stormchases",
+    "icon": "chart-bar",
+    "description": "Aggregated chase statistics for all time or a specific year — block equivalent of [scstats].",
+    "textdomain": "stormchases",
+    "attributes": {
+        "year": {
+            "type": "string",
+            "default": ""
+        },
+        "heading": {
+            "type": "string",
+            "default": ""
+        },
+        "showHeading": {
+            "type": "boolean",
+            "default": true
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "editorScript": "stormchases-chase-stats-editor",
+    "render": "file:./render.php"
+}

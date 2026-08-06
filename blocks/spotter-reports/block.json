@@ -1,0 +1,40 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 2,
+    "name": "stormchases/spotter-reports",
+    "title": "Spotter Reports",
+    "category": "stormchases",
+    "icon": "megaphone",
+    "description": "Interactive map + list of Spotter Network reports with clickable details — block equivalent of [sc_reports].",
+    "textdomain": "stormchases",
+    "attributes": {
+        "year": {
+            "type": "string",
+            "default": ""
+        },
+        "heading": {
+            "type": "string",
+            "default": ""
+        },
+        "showHeading": {
+            "type": "boolean",
+            "default": true
+        },
+        "height": {
+            "type": "number",
+            "default": 500
+        },
+        "types": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "default": ["tornado", "hail", "wind", "funnel", "wallcloud", "damage", "generic"]
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "editorScript": "stormchases-spotter-reports-editor",
+    "render": "file:./render.php"
+}

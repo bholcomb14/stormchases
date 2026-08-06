@@ -2,7 +2,7 @@
 /*
 Plugin Name: StormChases
 Description: Plugin to allow a storm chaser to create chase logs.
-Version:     1.9.0
+Version:     1.9.2
 Author:      Ben Holcomb
 Author URI:  https://www.benholcomb.com
 License:     GPL2
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 // Define plugin constants
 define('STORM_CHASES_DIR', plugin_dir_path(__FILE__));
 define('STORM_CHASES_URL', plugin_dir_url(__FILE__));
-define('STORM_CHASES_VERSION', '1.9.0');
+define('STORM_CHASES_VERSION', '1.9.2');
 
 if (!class_exists('Storm_Chases')) {
     class Storm_Chases {

@@ -1,0 +1,40 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 2,
+    "name": "stormchases/tornado-map",
+    "title": "Tornado Map",
+    "category": "stormchases",
+    "icon": "location-alt",
+    "description": "Interactive map of tornadoes with clickable details — block equivalent of [sc_tornado_map].",
+    "textdomain": "stormchases",
+    "attributes": {
+        "year": {
+            "type": "string",
+            "default": ""
+        },
+        "heading": {
+            "type": "string",
+            "default": ""
+        },
+        "showHeading": {
+            "type": "boolean",
+            "default": true
+        },
+        "height": {
+            "type": "number",
+            "default": 500
+        },
+        "ratings": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "default": ["ef5", "ef4", "ef3", "ef2", "ef1", "ef0", "unrated"]
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "editorScript": "stormchases-tornado-map-editor",
+    "render": "file:./render.php"
+}

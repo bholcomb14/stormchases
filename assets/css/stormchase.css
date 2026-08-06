@@ -199,6 +199,24 @@
     overflow: hidden;
 }
 
+/* Many WordPress themes ship a global `img { max-width: 100%; height: auto; }`
+   responsive-image rule, sometimes with !important. Leaflet's own stylesheet
+   normally protects its tiles/markers/image-overlays (radar) against exactly
+   this, but if a theme's rule also carries !important and loads after
+   Leaflet's CSS, it wins the specificity tie and the browser recomputes the
+   overlay's rendered size from the image's natural aspect ratio instead of
+   the width/height Leaflet actually set — the image's corner stays anchored
+   where Leaflet positioned it, but the rendered size shrinks or grows around
+   that anchor, so a vertically-compressed radar overlay visually drags every
+   storm on it toward the image's north edge. Re-assert protection with equal
+   specificity/!important and later source order so this plugin can't lose
+   that fight regardless of the active theme.
+*/
+.sc-leaflet-map.leaflet-container img {
+    max-width: none !important;
+    max-height: none !important;
+}
+
 /* Reports list */
 .sc-reports-list {
     margin-top: 20px;
@@ -313,6 +331,54 @@
     accent-color: #e63946;
     margin: 0;
     display: block;
+}
+
+.sc-track-playback {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.sc-track-playback-btn {
+    font-family: var(--storm-chases-font);
+    background: #fff;
+    border: 1px solid var(--storm-chases-border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--storm-chases-primary-color);
+    line-height: 1;
+    padding: 5px 10px;
+}
+
+.sc-track-playback-btn:hover {
+    background: var(--storm-chases-secondary-color);
+}
+
+#sc-track-play-toggle {
+    min-width: 34px;
+    font-size: 12px;
+}
+
+.sc-track-speed-btn {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 4px 9px;
+}
+
+.sc-track-speed-label {
+    font-family: monospace;
+    font-size: 12px;
+    color: #444;
+    min-width: 24px;
+    text-align: center;
+}
+
+.sc-track-buffer-status {
+    font-family: var(--storm-chases-font);
+    font-size: 12px;
+    font-style: italic;
+    color: #666;
 }
 
 .sc-track-timeline-labels {
