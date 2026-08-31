@@ -5,7 +5,7 @@
     "title": "Tornado Map",
     "category": "stormchases",
     "icon": "location-alt",
-    "description": "Interactive map of tornadoes with clickable details — block equivalent of [sc_tornado_map].",
+    "description": "Interactive map of tornadoes with clickable details, plus optional memorable-storm and hurricane point overlays — block equivalent of [sc_tornado_map].",
     "textdomain": "stormchases",
     "attributes": {
         "year": {
@@ -30,6 +30,38 @@
                 "type": "string"
             },
             "default": ["ef5", "ef4", "ef3", "ef2", "ef1", "ef0", "unrated"]
+        },
+        "showStorms": {
+            "type": "boolean",
+            "default": true
+        },
+        "showHurricanes": {
+            "type": "boolean",
+            "default": true
+        },
+        "showSnowfall": {
+            "type": "boolean",
+            "default": true
+        },
+        "showLegend": {
+            "type": "boolean",
+            "default": true
+        },
+        "showLayerToggles": {
+            "type": "boolean",
+            "default": false
+        },
+        "zoom": {
+            "type": "number",
+            "default": 0
+        },
+        "centerLat": {
+            "type": "number",
+            "default": 39.8283
+        },
+        "centerLon": {
+            "type": "number",
+            "default": -98.5795
         }
     },
     "supports": {

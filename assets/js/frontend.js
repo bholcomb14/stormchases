@@ -48,6 +48,32 @@
         initializeModals();
         initializeMapShortcodes();
         initializeChaseMap();
+
+        // Block editor live preview: ServerSideRender re-fetches a block's markup on every
+        // attribute change and swaps in a brand-new .sc-leaflet-map container each time
+        // rather than patching the existing one in place (see
+        // sc_enqueue_editor_preview_assets() in functions.php for why the editor needs this
+        // at all) — the one-time init just above only ever catches the very first preview,
+        // since ServerSideRender's REST fetch hasn't resolved yet when this file's own
+        // $(document).ready() fires.
+        //
+        // A MutationObserver watching for new .sc-leaflet-map nodes was tried first, but
+        // confirmed via a real headless-browser check of the actual block editor to fail
+        // reliably inside the editor's iframe canvas — even with document.body demonstrably
+        // non-null right before the call, `observer.observe(document.body, ...)` still threw
+        // "parameter 1 is not of type 'Node'". The iframe canvas replaces its own document
+        // content after scripts have already started running (WP's iframed-editor bootstrap),
+        // which can leave an already-executing script holding object references from a
+        // different realm than the live DOM — the same document.body that looks like a normal
+        // object to this script's own JS engine fails the browser's stricter, realm-aware
+        // native type-check inside MutationObserver.observe(). Polling sidesteps the whole
+        // question of which realm anything belongs to: it only ever touches whatever
+        // $('.sc-leaflet-map') finds live, right now, via jQuery (already proven to work
+        // correctly in this same context — jQuery's own selector engine has no such
+        // realm-sensitivity). initializeMapShortcodes() only initializes a container it
+        // hasn't already (see its own `sc-map-initialized` guard), so calling it on a timer
+        // is safe even when nothing has actually changed since the last tick.
+        setInterval(initializeMapShortcodes, 800);
     });
 
     function initializeModals() {
@@ -93,8 +119,30 @@
     // Keep in sync with sc_report_weather_type()'s slugs in functions.php.
     const REPORT_ICON_SLUGS = ['tornado', 'hail', 'wind', 'funnel', 'wallcloud', 'damage', 'generic'];
 
+    // Memorable-storm/hurricane point overlays on the tornado map (see
+    // sc_render_tornado_map()'s show_storms/show_hurricanes in functions.php)
+    // — deliberately distinct icon set from the EF-rated tornado-ef*.png
+    // icons above, since these are simple witnessed points, not logged chase
+    // tornado entries. pt.kind (not mapType) distinguishes them from the
+    // regular tornado markers a 'tornado' map otherwise contains.
+    const STORM_POINT_ICON = {
+        storm:     {url: TORNADO_ICON_BASE + 'map_storm.png', size: [20, 19]},
+        hurricane: {url: TORNADO_ICON_BASE + 'map_hurricane.png', size: [26, 25]},
+        snow:      {url: TORNADO_ICON_BASE + 'snowflake-icon.png', size: [20, 20]},
+    };
+
     function tornadoRank(ef) {
         return EF_RANK.hasOwnProperty(ef) ? EF_RANK[ef] : -1;
+    }
+
+    // Storm/hurricane/snow overlay points have no ef rating — treat them as
+    // rank 0 (above unrated/EF-U tornadoes, below any actually-rated one)
+    // for both z-stacking and draw order.
+    function pointRank(pt) {
+        if (pt.kind === 'storm' || pt.kind === 'hurricane' || pt.kind === 'snow') {
+            return 0;
+        }
+        return tornadoRank(pt.ef);
     }
 
     function tornadoIconUrl(ef) {
@@ -111,6 +159,9 @@
     // keeps this function safe to call for any future mapType).
     function markerIconSpec(mapType, pt) {
         if (mapType === 'tornado') {
+            if (pt.kind === 'storm' || pt.kind === 'hurricane' || pt.kind === 'snow') {
+                return STORM_POINT_ICON[pt.kind] || null;
+            }
             return {url: tornadoIconUrl(pt.ef), size: TORNADO_ICON_SIZE};
         }
         if (mapType === 'reports') {
@@ -119,28 +170,80 @@
         return null;
     }
 
+    function handleShortcodeMarkerClick(mapType, pt, clickPos) {
+        openModal(pt.modalId, clickPos);
+    }
+
     // Ascending by severity so higher-rated tornadoes are drawn (and z-index'd) last/on top
     function orderBySeverity(points, mapType) {
         if (mapType !== 'tornado') { return points; }
-        return points.slice().sort(function(a, b) { return tornadoRank(a.ef) - tornadoRank(b.ef); });
+        return points.slice().sort(function(a, b) { return pointRank(a) - pointRank(b); });
+    }
+
+    // Block editor preview: ServerSideRender injects its REST-fetched HTML via React's
+    // dangerouslySetInnerHTML, which never executes embedded <script> tags — so the
+    // inline `window.scMapData[uid] = [...]` assignment sc_render_tornado_map()/
+    // sc_render_spotter_reports() emit (functions.php) never runs there, even though
+    // sc_enqueue_editor_preview_assets() + the setInterval(initializeMapShortcodes, ...)
+    // polling above get this whole function running correctly inside the editor's
+    // iframe otherwise. Recovers the
+    // payload by reading the script tag's own text instead of relying on it having
+    // executed — only reached as a fallback when the normal global lookup comes up
+    // empty (the real frontend page never needs this; its script tags execute normally).
+    function extractScMapDataFromDom($el) {
+        const scriptEl = $el.parent().find('script').get(0);
+        if (!scriptEl) { return null; }
+        const mapId = $el.attr('id') || '';
+        const escapedId = mapId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp('window\\.scMapData\\[["\']' + escapedId + '["\']\\]\\s*=\\s*(\\[[\\s\\S]*\\]);');
+        const match = scriptEl.textContent.match(re);
+        if (!match) { return null; }
+        try {
+            return JSON.parse(match[1]);
+        } catch (e) {
+            return null;
+        }
     }
 
     function initializeMapShortcodes() {
         $('.sc-leaflet-map').each(function() {
-            const $el     = $(this);
+            const $el = $(this);
+            // Guards against re-initializing a container this same tick/call has already
+            // handled — needed now that this runs on a polling interval (see the
+            // setInterval(initializeMapShortcodes, ...) call above) rather than only once per
+            // freshly-added element, since re-running L.map() on an already-initialized
+            // container throws. A brand new .sc-leaflet-map element (ServerSideRender always
+            // replaces, never patches, the previous one) never has this flag set, so it still
+            // gets picked up on the next tick same as before.
+            if ($el.data('scMapInitialized')) {
+                return;
+            }
+            $el.data('scMapInitialized', true);
+
             const mapId   = $el.attr('id');
             const mapType = $el.data('map-type');
-            const points  = (window.scMapData && window.scMapData[mapId]) ? window.scMapData[mapId] : [];
+            let points = (window.scMapData && window.scMapData[mapId]) ? window.scMapData[mapId] : null;
+
+            if (points === null) {
+                points = extractScMapDataFromDom($el);
+                if (points !== null) {
+                    window.scMapData = window.scMapData || {};
+                    window.scMapData[mapId] = points;
+                }
+            }
+            points = points || [];
 
             if (!points.length) {
                 $el.html('<p style="padding:10px;">' + 'No location data available for this map.' + '</p>');
                 return;
             }
 
+            const mapOptions = (window.scMapOptions && window.scMapOptions[mapId]) ? window.scMapOptions[mapId] : {};
+
             if (mapProvider === 'google') {
-                initGoogleMapShortcode($el[0], points, mapType);
+                initGoogleMapShortcode($el[0], points, mapType, mapId, mapOptions);
             } else {
-                initLeafletMapShortcode($el[0], points, mapType);
+                initLeafletMapShortcode($el[0], points, mapType, mapId, mapOptions);
             }
         });
     }
@@ -186,11 +289,33 @@
         });
     }
 
-    function initLeafletMapShortcode(container, points, mapType) {
+    // .sc-map-controls checkboxes (see sc_render_tornado_map()'s
+    // show_layer_toggles) — only rendered for mapType 'tornado' today, but
+    // harmless to call for any map type since the selector just won't match
+    // anything if no such panel exists.
+    function wireMapToggles(mapUid, layerGroups, isGoogle, map) {
+        $('.sc-map-controls[data-map-uid="' + mapUid + '"]').each(function() {
+            $(this).find('.sc-map-toggle').on('change', function() {
+                const group = layerGroups[$(this).data('layer')];
+                if (!group) { return; }
+                const checked = $(this).is(':checked');
+                if (isGoogle) {
+                    group.forEach(function(marker) { marker.setMap(checked ? map : null); });
+                } else if (checked) {
+                    group.addTo(map);
+                } else {
+                    map.removeLayer(group);
+                }
+            });
+        });
+    }
+
+    function initLeafletMapShortcode(container, points, mapType, mapUid, mapOptions) {
         if (typeof L === 'undefined') {
             container.innerHTML = '<p style="padding:10px;">Leaflet map library not loaded.</p>';
             return;
         }
+        mapOptions = mapOptions || {};
 
         const map = L.map(container).setView([39.8283, -98.5795], 4);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -200,6 +325,10 @@
 
         addLeafletFullscreenControl(map, container);
 
+        // Grouped by groupKey (EF slug / 'storm' / 'hurricane') only for the
+        // tornado map type, so show_layer_toggles' checkboxes have something
+        // to show/hide — other map types keep today's flat marker list.
+        const layerGroups = {};
         const boundsGroup = [];
         orderBySeverity(points, mapType).forEach(function(pt) {
             const markerOpts = {};
@@ -213,37 +342,54 @@
                 });
             }
             if (mapType === 'tornado') {
-                markerOpts.zIndexOffset = tornadoRank(pt.ef) * 10000;
+                markerOpts.zIndexOffset = pointRank(pt) * 10000;
             }
-            const marker = L.marker([pt.lat, pt.lon], markerOpts).addTo(map);
+            const marker = L.marker([pt.lat, pt.lon], markerOpts);
             marker.bindTooltip(pt.label, {permanent: false, direction: 'top', className: 'sc-marker-tooltip'});
             marker.on('click', function(e) {
                 const oe = e.originalEvent;
-                openModal(pt.modalId, oe ? {x: oe.clientX, y: oe.clientY} : null);
+                handleShortcodeMarkerClick(mapType, pt, oe ? {x: oe.clientX, y: oe.clientY} : null);
             });
+
+            if (mapType === 'tornado' && pt.groupKey) {
+                if (!layerGroups[pt.groupKey]) {
+                    layerGroups[pt.groupKey] = L.layerGroup().addTo(map);
+                }
+                layerGroups[pt.groupKey].addLayer(marker);
+            } else {
+                marker.addTo(map);
+            }
             boundsGroup.push([pt.lat, pt.lon]);
         });
 
-        if (boundsGroup.length > 1) {
+        if (mapOptions.zoom) {
+            map.setView([mapOptions.centerLat, mapOptions.centerLon], mapOptions.zoom);
+        } else if (boundsGroup.length > 1) {
             map.fitBounds(boundsGroup, {padding: [30, 30]});
         } else if (boundsGroup.length === 1) {
             map.setView(boundsGroup[0], 8);
         }
+
+        if (mapType === 'tornado') {
+            wireMapToggles(mapUid, layerGroups, false, map);
+        }
     }
 
-    function initGoogleMapShortcode(container, points, mapType) {
+    function initGoogleMapShortcode(container, points, mapType, mapUid, mapOptions) {
         if (typeof google === 'undefined' || !google.maps) {
             container.innerHTML = '<p style="padding:10px;">Google Maps not loaded.</p>';
             return;
         }
+        mapOptions = mapOptions || {};
 
         const map = new google.maps.Map(container, {
-            center: {lat: 39.8283, lng: -98.5795},
-            zoom: 4,
+            center: mapOptions.zoom ? {lat: mapOptions.centerLat, lng: mapOptions.centerLon} : {lat: 39.8283, lng: -98.5795},
+            zoom: mapOptions.zoom || 4,
             mapTypeId: google.maps.MapTypeId.ROADMAP,
             fullscreenControl: true,
         });
 
+        const layerGroups = {};
         const bounds = new google.maps.LatLngBounds();
         orderBySeverity(points, mapType).forEach(function(pt) {
             const iconSpec = markerIconSpec(mapType, pt);
@@ -257,20 +403,29 @@
                 map: map,
                 title: pt.label,
                 icon: icon,
-                zIndex: mapType === 'tornado' ? tornadoRank(pt.ef) * 10000 : undefined,
+                zIndex: mapType === 'tornado' ? pointRank(pt) * 10000 : undefined,
             });
             marker.addListener('click', function(event) {
                 const de = event.domEvent;
-                openModal(pt.modalId, de ? {x: de.clientX, y: de.clientY} : null);
+                handleShortcodeMarkerClick(mapType, pt, de ? {x: de.clientX, y: de.clientY} : null);
             });
+            if (mapType === 'tornado' && pt.groupKey) {
+                (layerGroups[pt.groupKey] = layerGroups[pt.groupKey] || []).push(marker);
+            }
             bounds.extend({lat: pt.lat, lng: pt.lon});
         });
 
-        if (points.length > 1) {
-            map.fitBounds(bounds);
-        } else if (points.length === 1) {
-            map.setCenter({lat: points[0].lat, lng: points[0].lon});
-            map.setZoom(8);
+        if (!mapOptions.zoom) {
+            if (points.length > 1) {
+                map.fitBounds(bounds);
+            } else if (points.length === 1) {
+                map.setCenter({lat: points[0].lat, lng: points[0].lon});
+                map.setZoom(8);
+            }
+        }
+
+        if (mapType === 'tornado') {
+            wireMapToggles(mapUid, layerGroups, true, map);
         }
     }
 
@@ -409,6 +564,47 @@
             if (lon > east) east = lon;
         });
         return {south: south - padDeg, north: north + padDeg, west: west - padDeg, east: east + padDeg};
+    }
+
+    // A crop sized only from the track's own bounding box (trackCropBounds above) looks
+    // fine for a compact track, but a track that's much longer in one direction than the
+    // other (e.g. a mostly north-south chasecation drive) makes map.fitBounds() zoom out
+    // far enough — to fit the container's own aspect ratio — that a lot of extra width
+    // (or height) becomes visible on screen well beyond the track's own footprint. A crop
+    // that ignores that ends up as a narrow radar strip hugging the track, bordered by
+    // bare map on either side, even though the underlying storm structure the radar
+    // shows is often much wider than the track that happened to be driven through it.
+    // map.getBounds() (read *after* fitBounds has settled) already reflects the real
+    // fitted viewport for whatever the container's actual size/aspect ratio is — union it
+    // with the track's own box (still the fallback/floor if bounds aren't available yet,
+    // e.g. a container with no size) so the crop is always at least as large as what's
+    // actually visible by default, plus a little extra so a small pan/zoom-out doesn't
+    // immediately reveal a bare edge. Deliberately still bounded, not "just load more
+    // image" — same efficiency intent as trackCropBounds, just sized correctly.
+    function viewportCropBounds(map, trackPoints, padDeg) {
+        var trackBox = trackCropBounds(trackPoints, padDeg);
+        var fitted = null;
+        try {
+            if (map && map.getBounds) {
+                var b = map.getBounds();
+                if (b) {
+                    if (typeof b.getSouth === 'function') { // Leaflet LatLngBounds
+                        fitted = {south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast()};
+                    } else if (typeof b.getSouthWest === 'function') { // google.maps.LatLngBounds
+                        var sw = b.getSouthWest(), ne = b.getNorthEast();
+                        fitted = {south: sw.lat(), north: ne.lat(), west: sw.lng(), east: ne.lng()};
+                    }
+                }
+            }
+        } catch (e) { fitted = null; }
+        if (!fitted) { return trackBox; }
+        var viewPad = padDeg / 4;
+        return {
+            south: Math.min(trackBox.south, fitted.south - viewPad),
+            north: Math.max(trackBox.north, fitted.north + viewPad),
+            west:  Math.min(trackBox.west,  fitted.west  - viewPad),
+            east:  Math.max(trackBox.east,  fitted.east  + viewPad),
+        };
     }
 
     // Loads the full archive image AND its accompanying .wld world file, crops the
@@ -710,7 +906,20 @@
 
         var lastIdx = pi.points.length - 1;
         var bounds  = renderTo(lastIdx);
-        if (bounds.isValid()) { map.fitBounds(bounds, { padding: [20, 20] }); }
+        // Only trust map.getBounds() in viewportCropBounds() below if fitBounds actually
+        // ran — otherwise the map is still sitting at its default continental view, and
+        // that huge extent would balloon the radar crop instead of shrinking it. animate:
+        // false is deliberate and load-bearing, not just cosmetic: Leaflet's zoom/pan
+        // animation updates _zoom/_lastCenter asynchronously (over requestAnimationFrame),
+        // so map.getBounds() called synchronously right after an *animated* fitBounds still
+        // reflects the map's state from *before* the call — here, the constructor's default
+        // setView([39.8283, -98.5795], 4), which covers most of the continental US. That's
+        // exactly the "static square over the middle of the country, unrelated to the actual
+        // track" bug: every track produced roughly the same generic crop, because
+        // viewportCropBounds() was really unioning the track's own (correct, small) box with
+        // that same constant default view every time, not the actual fitted one.
+        var boundsFitted = bounds.isValid();
+        if (boundsFitted) { map.fitBounds(bounds, { padding: [20, 20], animate: false }); }
 
         var carMarker = L.marker(pi.points[lastIdx], {
             icon: leafletArrowIcon(lastIdx > 0 ? trackBearing(pi.points[lastIdx - 1], pi.points[lastIdx]) : 0),
@@ -736,7 +945,7 @@
                 function clearOverlay() {
                     if (radarLayer) { map.removeLayer(radarLayer); radarLayer = null; }
                 },
-                trackCropBounds(pi.points, 2)
+                viewportCropBounds(boundsFitted ? map : null, pi.points, 2)
             );
         }
 
@@ -795,7 +1004,20 @@
 
         var lastIdx = pi.points.length - 1;
         var bounds  = renderTo(lastIdx);
-        if (!bounds.isEmpty()) { map.fitBounds(bounds); }
+        // See the matching comment in initLeafletTrack() above re: animate:false and why —
+        // Google Maps has no equivalent synchronous-fitBounds option, but unlike Leaflet
+        // (which returns a defined-but-stale bounds object, silently wrong) Google is
+        // documented to return undefined/incomplete bounds from getBounds() until the map's
+        // first 'idle' event if it hasn't settled yet — viewportCropBounds()'s own
+        // !fitted fallback already treats that as "not ready" and falls back to the
+        // track-only box rather than a wrong-but-valid one. Not confirmed live (only the
+        // Leaflet/OpenStreetMap path has been tested end-to-end so far) — if Google Maps
+        // shows the same "generic box unrelated to the track" symptom, this needs the same
+        // fix as Leaflet: defer reading getBounds() until google.maps.event.addListenerOnce
+        // (map, 'idle', ...) fires, which will need restructuring this function since
+        // updateRadar is used synchronously below.
+        var boundsFitted = !bounds.isEmpty();
+        if (boundsFitted) { map.fitBounds(bounds); }
 
         var carMarker = new google.maps.Marker({
             position: { lat: pi.points[lastIdx][0], lng: pi.points[lastIdx][1] },
@@ -823,7 +1045,7 @@
                 function clearOverlay() {
                     if (radarOverlay) { radarOverlay.setMap(null); radarOverlay = null; }
                 },
-                trackCropBounds(pi.points, 2)
+                viewportCropBounds(boundsFitted ? map : null, pi.points, 2)
             );
         }
 
@@ -1107,4 +1329,12 @@
             }
         }
     };
+
+    // Exposed so the block editor can re-run map init against a ServerSideRender-injected
+    // container (see blocks/shared/editor-common.js's withMapPreview) — the normal
+    // $(document).ready pass above only ever runs once, on a real page load, which never
+    // happens inside the block editor.
+    window.StormChasesFrontend = window.StormChasesFrontend || {};
+    window.StormChasesFrontend.initLeafletMapShortcode = initLeafletMapShortcode;
+    window.StormChasesFrontend.initGoogleMapShortcode = initGoogleMapShortcode;
 })(jQuery);

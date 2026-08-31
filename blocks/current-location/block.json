@@ -1,0 +1,25 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 2,
+    "name": "stormchases/current-location",
+    "title": "Current Location",
+    "category": "stormchases",
+    "icon": "location",
+    "description": "Embeds the live chaser-location tracker (currently /files/location.html) as an editor-native block instead of a raw HTML iframe.",
+    "textdomain": "stormchases",
+    "attributes": {
+        "url": {
+            "type": "string",
+            "default": "https://benholcomb.com/files/location.html"
+        },
+        "height": {
+            "type": "number",
+            "default": 600
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "editorScript": "stormchases-current-location-editor",
+    "render": "file:./render.php"
+}

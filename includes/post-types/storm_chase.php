@@ -44,7 +44,6 @@ class StormChaseTemplate {
         add_action('save_post_' . self::POST_TYPE, [$this, 'save_post'], 10, 3);
         add_action('trashed_post', [$this, 'handle_trashed_post'], 10, 1);
         add_filter('pre_get_posts', 'sc_modify_pre_get_posts');
-        add_shortcode('scarchive', 'chase_archive_shortcode');
         add_filter('body_class', 'stormchases_classes');
         $this->register_meta_fields();
         add_rewrite_rule(
@@ -106,8 +105,7 @@ class StormChaseTemplate {
             $deps = ['jquery'];
 
             if ($map_provider === 'openstreetmap') {
-                wp_enqueue_style('leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', [], '1.9.4');
-                wp_enqueue_script('leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', [], '1.9.4', true);
+                sc_enqueue_leaflet();
                 $deps[] = 'leaflet';
             }
 
@@ -401,14 +399,17 @@ class StormChaseTemplate {
                     $file_count, $segment_count, $point_count
                 );
             } elseif ($file_count > 1) {
+                /* translators: 1: number of GPS files merged, 2: number of points stored */
                 $msg = sprintf(
                     __('GPS track merged from %1$d files: %2$d points stored.', 'stormchases'),
                     $file_count, $point_count
                 );
             } else {
+                /* translators: %d: number of GPS points stored */
                 $msg = sprintf(__('GPS track loaded: %d points stored.', 'stormchases'), $point_count);
             }
             if ($trimmed > 0) {
+                /* translators: %d: number of GPS points trimmed by privacy zones */
                 $msg .= ' ' . sprintf(__('%d point(s) trimmed by privacy zones.', 'stormchases'), $trimmed);
             }
             if ($outliers_removed > 0) {
@@ -1012,212 +1013,21 @@ class StormChaseTemplate {
         if ($csv_content === false) {
             return new WP_Error('read_failed', __('Unable to read CSV file.', 'stormchases'), ['status' => 500]);
         }
-        $csv_content = preg_replace('/^\xEF\xBB\xBF/', '', $csv_content);
-
-        $delimiters = [',', ';'];
-        $delimiter = ',';
-        $max_columns = 0;
-        $first_line = strtok($csv_content, "\n");
-        foreach ($delimiters as $d) {
-            $columns = count(str_getcsv($first_line, $d, '"', '\\'));
-            if ($columns > $max_columns) {
-                $max_columns = $columns;
-                $delimiter = $d;
-            }
-        }
-
-        $csv = array_map(function($line) use ($delimiter) {
-            return str_getcsv(trim($line), $delimiter, '"', '\\');
-        }, file($file['tmp_name'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
-        if (empty($csv)) {
-            return new WP_Error('read_failed', __('CSV file is empty or unreadable.', 'stormchases'), ['status' => 400]);
-        }
-
-        $header = array_map(function($h) { return trim(strtolower($h)); }, array_shift($csv));
-        $required_headers = ['report', 'report_type', 'stamp', 'lat', 'lon', 'narrative', 'tornado', 'hailsize', 'windspeed', 'city1', 'cwa'];
-        $missing_headers = array_diff($required_headers, $header);
-        if (!empty($missing_headers)) {
-            return new WP_Error('invalid_csv', __('Missing required CSV headers: ' . implode(', ', $missing_headers), 'stormchases'), ['status' => 400]);
-        }
-
-        $reports_by_date = [];
-        $skipped = 0;
-        $inserted = 0;
-        $unmatched_dates = [];
-        $skip_reasons = [];
-
-        foreach ($csv as $index => $row) {
-            $row_number = $index + 2;
-            if (count($row) !== count($header)) {
-                $skipped++;
-                $skip_reasons[] = "Row $row_number: Incorrect number of columns.";
-                continue;
-            }
-
-            $report = array_combine($header, array_map('trim', $row));
-            if ($report === false) {
-                $skipped++;
-                $skip_reasons[] = "Row $row_number: Failed to parse row.";
-                continue;
-            }
-
-            if ($report['report_type'] !== 'S') {
-                $skipped++;
-                $skip_reasons[] = "Row $row_number: Invalid report type.";
-                continue;
-            }
-
-            $report_date = DateTime::createFromFormat('Y-m-d H:i:s', $report['stamp'] ?? '');
-            if (!$report_date) {
-                $skipped++;
-                $skip_reasons[] = "Row $row_number: Invalid timestamp format.";
-                continue;
-            }
-
-            $hour = (int)$report_date->format('H');
-            if ($hour < 10) {
-                $report_date->modify('-1 day');
-            }
-            $date_key = $report_date->format('Ymd');
-
-            $chase_post = $this->get_chase_post_by_date($date_key);
-            if (!$chase_post) {
-                $unmatched_dates[$date_key] = ($unmatched_dates[$date_key] ?? 0) + 1;
-                $skipped++;
-                $skip_reasons[] = "Row $row_number: No storm chase post found for date $date_key.";
-                continue;
-            }
-
-            $report_data = $this->data_handler->sanitize_spotter_report([
-                'report_id' => $report['report'] ?? '',
-                'type' => $report['report_type'] ?? 'S',
-                'timestamp' => $report['stamp'] ?? '',
-                'lat' => !empty($report['lat']) && is_numeric($report['lat']) ? floatval($report['lat']) : 0,
-                'lon' => !empty($report['lon']) && is_numeric($report['lon']) ? floatval($report['lon']) : 0,
-                'narrative' => $report['narrative'] ?? '',
-                'tornado' => isset($report['tornado']) && $report['tornado'] !== '' ? (int)$report['tornado'] : 0,
-                'funnelcloud' => isset($report['funnelcloud']) && $report['funnelcloud'] !== '' ? (int)$report['funnelcloud'] : 0,
-                'wallcloud' => isset($report['wallcloud']) && $report['wallcloud'] !== '' ? (int)$report['wallcloud'] : 0,
-                'hail' => isset($report['hail']) && $report['hail'] !== '' ? (int)$report['hail'] : 0,
-                'hailsize' => !empty($report['hailsize']) && is_numeric($report['hailsize']) ? floatval($report['hailsize']) : 0,
-                'windspeed' => !empty($report['windspeed']) && is_numeric($report['windspeed']) ? floatval($report['windspeed']) : 0,
-                'damage' => isset($report['damage']) && $report['damage'] !== '' ? (int)$report['damage'] : 0,
-                'city' => $report['city1'] ?? '',
-                'cwa' => !empty($report['cwa']) ? $report['cwa'] : 'UNKNOWN',
-            ]);
-
-            if (empty($report_data)) {
-                $skipped++;
-                $skip_reasons[] = "Row $row_number: Invalid report data after sanitization.";
-                continue;
-            }
-            $reports_by_date[$chase_post->ID][] = $report_data;
-        }
-
-        if (empty($reports_by_date)) {
-            $message = __('No valid reports found in the CSV.', 'stormchases');
-            if (!empty($unmatched_dates)) {
-                $message .= ' Unmatched dates: ' . implode(', ', array_keys($unmatched_dates));
-            }
-            return new WP_Error('no_valid_reports', $message, [
-                'status' => 400,
-                'data' => [
-                    'skipped' => $skipped,
-                    'skip_reasons' => $skip_reasons,
-                    'unmatched_dates' => $unmatched_dates
-                ]
-            ]);
-        }
 
         $overwrite = !empty($request->get_param('overwrite_reports')) && $request->get_param('overwrite_reports') == '1';
         $dry_run   = !empty($request->get_param('dry_run')) && $request->get_param('dry_run') == '1';
 
-        foreach ($reports_by_date as $post_id => $reports) {
-            $chase_data = $this->data_handler->get_chase_data($post_id);
-
-            if ($overwrite) {
-                $existing_count_for_post = count($chase_data['spotter_reports']);
-            } else {
-                $existing_count_for_post = 0;
-            }
-
-            if ($dry_run) {
-                $existing_report_ids = array_column($chase_data['spotter_reports'], 'report_id');
-                foreach ($reports as $report) {
-                    if (!$overwrite && in_array($report['report_id'], $existing_report_ids)) {
-                        $skipped++;
-                    } else {
-                        $inserted++;
-                    }
-                }
-                continue;
-            }
-
-            if ($overwrite) {
-                $chase_data['spotter_reports'] = [];
-            }
-
-            $existing_report_ids = array_column($chase_data['spotter_reports'], 'report_id');
-            foreach ($reports as $report) {
-                if (!$overwrite && in_array($report['report_id'], $existing_report_ids)) {
-                    $skipped++;
-                    $skip_reasons[] = "Row for report ID {$report['report_id']}: Already exists for post ID $post_id and overwrite not enabled.";
-                    continue;
-                }
-                $chase_data['spotter_reports'][] = $report;
-                $inserted++;
-            }
-
-            $result = $this->data_handler->save_chase_data($post_id, $chase_data);
-            if (is_wp_error($result)) {
-                return new WP_Error('save_failed', __('Failed to save reports: ' . $result->get_error_message(), 'stormchases'), [
-                    'status' => 500,
-                    'data' => [
-                        'skipped' => $skipped,
-                        'skip_reasons' => $skip_reasons,
-                        'unmatched_dates' => $unmatched_dates
-                    ]
-                ]);
-            }
-        }
-
-        if (!$dry_run) {
-            $this->clear_transients(array_keys($reports_by_date));
-        }
-        $message = $dry_run
-            ? sprintf(
-                __('[DRY RUN] Would import %d reports across %d chase dates. %d would be skipped.', 'stormchases'),
-                $inserted,
-                count($reports_by_date),
-                $skipped
-              )
-            : sprintf(
-                __('Uploaded %d reports successfully across %d posts. Skipped %d reports.', 'stormchases'),
-                $inserted,
-                count($reports_by_date),
-                $skipped
-              );
-        if (!empty($unmatched_dates)) {
-            $message .= ' Unmatched dates: ' . implode(', ', array_keys($unmatched_dates));
-        }
-        if (!empty($skip_reasons)) {
-            $message .= '<br><strong>Skipped Rows:</strong><ul>';
-            foreach ($skip_reasons as $reason) {
-                $message .= '<li>' . esc_html($reason) . '</li>';
-            }
-            $message .= '</ul>';
+        // Parsing/import logic lives in sc_import_spotter_reports_csv() (functions.php),
+        // shared with the Spotter Network auto-fetch flow (Storm_Chases_Settings) — this
+        // method's only job is turning the REST file upload into a raw CSV string.
+        $result = sc_import_spotter_reports_csv($csv_content, $overwrite, $dry_run);
+        if (is_wp_error($result)) {
+            return $result;
         }
 
         return rest_ensure_response([
             'success' => true,
-            'data' => [
-                'message' => $message,
-                'dry_run' => $dry_run,
-                'inserted' => $inserted,
-                'skipped' => $skipped,
-                'skip_reasons' => $skip_reasons,
-                'unmatched_dates' => $unmatched_dates
-            ]
+            'data' => $result,
         ]);
     }
 
@@ -1268,10 +1078,18 @@ class StormChaseTemplate {
                     printf('<b>%s:</b> %s<br/>', esc_html__('States Chased', 'stormchases'), esc_html($chase_data['chasestates']));
                 }
                 if (get_option('chase_partners_enable') && $chase_data['chasepartners']) {
-                    printf('<b>%s:</b> %s<br/>', esc_html__('Chase Partners', 'stormchases'), esc_html($chase_data['chasepartners']));
+                    printf(
+                        '<b>%s:</b> %s<br/>',
+                        esc_html__('Chase Partners', 'stormchases'),
+                        sc_render_person_list($post->ID, $chase_data['chasepartners'])
+                    );
                 }
                 if (get_option('chasers_encountered_enable') && $chase_data['chasechasers'] && $chase_data['chasechasers'] !== 'None') {
-                    printf('<b>%s:</b> %s<br/>', esc_html__('Chasers Encountered', 'stormchases'), esc_html($chase_data['chasechasers']));
+                    printf(
+                        '<b>%s:</b> %s<br/>',
+                        esc_html__('Chasers Encountered', 'stormchases'),
+                        sc_render_person_list($post->ID, $chase_data['chasechasers'])
+                    );
                 }
                 if (get_option('tornadoes_enable') && !empty($chase_data['tornadoes'])) {
                     printf('<b>%s:</b> %s<br/>', esc_html__('Tornadoes Witnessed', 'stormchases'), esc_html(count($chase_data['tornadoes'])));
@@ -1315,6 +1133,78 @@ class StormChaseTemplate {
                     }
                     echo '</ul>';
                 }
+                if (!empty($chase_data['storm_mode'])) {
+                    printf('<b>%s:</b> %s<br/>', esc_html__('Storm Mode', 'stormchases'), esc_html(implode(', ', $chase_data['storm_mode'])));
+                }
+                if (!empty($chase_data['landfalls'])) {
+                    printf('<b>%s:</b> %s<br/>', esc_html__('Hurricane Landfalls', 'stormchases'), esc_html(count($chase_data['landfalls'])));
+                    echo '<ul>';
+                    foreach ($chase_data['landfalls'] as $index => $landfall) {
+                        $modal_id = 'landfall-modal-' . $post->ID . '-' . $index;
+                        /* translators: %d: landfall number, used when a landfall has no name */
+                        $landfall_name = $landfall['name'] ?: sprintf(__('Landfall %d', 'stormchases'), $index + 1);
+                        ?>
+                        <li>
+                            <a href="#" class="tornado-link"
+                               data-modal-id="<?php echo esc_attr($modal_id); ?>">
+                                <?php echo esc_html($landfall_name); ?>
+                            </a>
+                            <div id="<?php echo esc_attr($modal_id); ?>" class="modal tornado-modal" style="display: none;">
+                                <div class="modal-overlay"></div>
+                                <div class="modal-content tornado-modal-content">
+                                    <span class="modal-close">&times;</span>
+                                    <h3><?php echo esc_html($landfall_name); ?></h3>
+                                    <p><b><?php esc_html_e('Category', 'stormchases'); ?>:</b> <?php echo esc_html($landfall['category'] ?? 'Unknown'); ?></p>
+                                    <?php if (!empty($landfall['time'])) : ?>
+                                        <p><b><?php esc_html_e('Time', 'stormchases'); ?>:</b> <?php echo esc_html($landfall['time']); ?></p>
+                                    <?php endif; ?>
+                                    <?php if (!empty($landfall['wind_speed'])) : ?>
+                                        <p><b><?php esc_html_e('Wind Speed', 'stormchases'); ?>:</b> <?php echo esc_html($landfall['wind_speed']); ?> mph</p>
+                                    <?php endif; ?>
+                                    <?php if (!empty($landfall['pressure'])) : ?>
+                                        <p><b><?php esc_html_e('Lowest Pressure', 'stormchases'); ?>:</b> <?php echo esc_html($landfall['pressure']); ?> mb</p>
+                                    <?php endif; ?>
+                                    <p><b><?php esc_html_e('Latitude', 'stormchases'); ?>:</b> <?php echo esc_html($landfall['lat'] ?? '0'); ?></p>
+                                    <p><b><?php esc_html_e('Longitude', 'stormchases'); ?>:</b> <?php echo esc_html($landfall['lon'] ?? '0'); ?></p>
+                                </div>
+                            </div>
+                        </li>
+                        <?php
+                    }
+                    echo '</ul>';
+                }
+                if (!empty($chase_data['snowfall_reports'])) {
+                    printf('<b>%s:</b> %s<br/>', esc_html__('Snowfall Reports', 'stormchases'), esc_html(count($chase_data['snowfall_reports'])));
+                    echo '<ul>';
+                    foreach ($chase_data['snowfall_reports'] as $index => $snowfall) {
+                        $modal_id = 'snowfall-modal-' . $post->ID . '-' . $index;
+                        /* translators: %d: snowfall report number, used when a report has no location */
+                        $snow_location = $snowfall['location'] ?: sprintf(__('Report %d', 'stormchases'), $index + 1);
+                        $snow_depth = number_format((float) ($snowfall['depth'] ?? 0), 1);
+                        ?>
+                        <li>
+                            <a href="#" class="tornado-link"
+                               data-modal-id="<?php echo esc_attr($modal_id); ?>">
+                                <?php echo esc_html($snow_location . ' — ' . $snow_depth . '"'); ?>
+                            </a>
+                            <div id="<?php echo esc_attr($modal_id); ?>" class="modal tornado-modal" style="display: none;">
+                                <div class="modal-overlay"></div>
+                                <div class="modal-content tornado-modal-content">
+                                    <span class="modal-close">&times;</span>
+                                    <h3><?php echo esc_html($snow_location); ?></h3>
+                                    <p><b><?php esc_html_e('Snowfall Depth', 'stormchases'); ?>:</b> <?php echo esc_html($snow_depth); ?> in.</p>
+                                    <?php if (!empty($snowfall['time'])) : ?>
+                                        <p><b><?php esc_html_e('Time', 'stormchases'); ?>:</b> <?php echo esc_html($snowfall['time']); ?></p>
+                                    <?php endif; ?>
+                                    <p><b><?php esc_html_e('Latitude', 'stormchases'); ?>:</b> <?php echo esc_html($snowfall['lat'] ?? '0'); ?></p>
+                                    <p><b><?php esc_html_e('Longitude', 'stormchases'); ?>:</b> <?php echo esc_html($snowfall['lon'] ?? '0'); ?></p>
+                                </div>
+                            </div>
+                        </li>
+                        <?php
+                    }
+                    echo '</ul>';
+                }
                 if (get_option('hail_enable') && $chase_data['chasehail']) {
                     printf('<b>%s:</b> %s %s<br/>', esc_html__('Largest Hail Encountered', 'stormchases'), esc_html(number_format($chase_data['chasehail'], 2)), esc_html__('in.', 'stormchases'));
                 }
@@ -1335,7 +1225,7 @@ class StormChaseTemplate {
                     foreach ($chase_data['spotter_reports'] as $index => $report) {
                         $report_id = $report['report_id'] ?? $index;
                         $weather_type = sc_report_weather_type($report)['label'];
-                        $link_text = !empty($report['city']) ? esc_html($weather_type . ' ' . $report['city']) : esc_html__('Report ' . ($index + 1), 'stormchases');
+                        $link_text = !empty($report['city']) ? esc_html($weather_type . ' ' . $report['city']) : sprintf(esc_html__('Report %d', 'stormchases'), $index + 1);
                         $modal_id = 'report-modal-' . $post->ID . '-' . $report_id;
                         $timestamp = !empty($report['timestamp']) && strtotime($report['timestamp'])
                             ? esc_html(storm_chases_convert_utc_to_central($report['timestamp']))
@@ -1429,19 +1319,17 @@ class StormChaseTemplate {
         ob_start();
         $current_post_date = $post->post_date;
 
-        $prev_query = $wpdb->prepare(
+        $prev_post = $wpdb->get_row($wpdb->prepare(
             "SELECT ID, post_title FROM $wpdb->posts WHERE post_type = %s AND post_status = 'publish' AND post_date < %s ORDER BY post_date DESC LIMIT 1",
             self::POST_TYPE,
             $current_post_date
-        );
-        $prev_post = $wpdb->get_row($prev_query);
+        ));
 
-        $next_query = $wpdb->prepare(
+        $next_post = $wpdb->get_row($wpdb->prepare(
             "SELECT ID, post_title FROM $wpdb->posts WHERE post_type = %s AND post_status = 'publish' AND post_date > %s ORDER BY post_date ASC LIMIT 1",
             self::POST_TYPE,
             $current_post_date
-        );
-        $next_post = $wpdb->get_row($next_query);
+        ));
 
         ?>
         <nav class="storm-chase-navigation">
@@ -1501,6 +1389,14 @@ class StormChaseTemplate {
         $result = wp_update_post([
             'ID' => $post_id,
             'post_name' => $chasedate,
+            // A 'draft'/'pending' post's post_date_gmt is always the floating-date sentinel
+            // (WP core's own behavior, regardless of what post_date was set to) — without
+            // edit_date here, wp_update_post() treats that sentinel as "no date was ever
+            // really set" and silently resets post_date to now on every save while still a
+            // draft. Confirmed against a real WP install: this is why a wizard-created draft
+            // with a deliberately back-dated post_date would otherwise lose that date the
+            // moment this hook first runs (i.e. immediately, on the very same save).
+            'edit_date' => true,
         ], true);
         add_action('save_post_' . self::POST_TYPE, [$this, 'set_post_name_from_chasedate'], 20, 3);
 
@@ -1541,7 +1437,7 @@ class StormChaseTemplate {
     }
 
     public function save_post($post_id, $post, $update) {
-        if (!isset($_POST['storm_chases_nonce']) || !wp_verify_nonce($_POST['storm_chases_nonce'], 'storm_chases_save_post')) {
+        if (!isset($_POST['storm_chases_nonce']) || !wp_verify_nonce(wp_unslash($_POST['storm_chases_nonce']), 'storm_chases_save_post')) {
             return;
         }
 
@@ -1554,13 +1450,17 @@ class StormChaseTemplate {
         }
 
         $chase_data = $this->data_handler->get_chase_data($post_id);
+        // Captured before chase_type is overwritten below — lets the best-chase block detect
+        // a type change and clean up the old type's slot instead of leaving it stale.
+        $old_chase_type = $chase_data['chase_type'] ?? 'Convective';
 
         if (array_key_exists('tornadoes', $_POST)) {
-            if (empty($_POST['tornadoes']) || $_POST['tornadoes'] === '' || (is_array($_POST['tornadoes']) && count($_POST['tornadoes']) === 0)) {
+            $tornadoes_raw = wp_unslash($_POST['tornadoes']);
+            if (empty($tornadoes_raw) || $tornadoes_raw === '' || (is_array($tornadoes_raw) && count($tornadoes_raw) === 0)) {
                 $chase_data['tornadoes'] = [];
             } else {
                 $tornadoes = [];
-                foreach ($_POST['tornadoes'] as $tornado) {
+                foreach ($tornadoes_raw as $tornado) {
                     // Re-indexed sequentially (not by the posted key) so storage always matches
                     // submission order — the admin UI's drag-to-reorder relies on this.
                     $tornadoes[] = [
@@ -1583,26 +1483,84 @@ class StormChaseTemplate {
         }
 
         $chase_data['chasetornado'] = !empty($chase_data['tornadoes']) ? 1 : 0;
+
+        // Chase Type is validated (not just sanitized) by StormChasesData::sanitize_chase_type()
+        // via save_chase_data() below — falls back to 'Convective' for anything unrecognized.
+        $chase_data['chase_type'] = isset($_POST['chase_type']) ? sanitize_text_field(wp_unslash($_POST['chase_type'])) : $chase_data['chase_type'];
+
+        if (array_key_exists('landfalls', $_POST)) {
+            $landfalls_raw = wp_unslash($_POST['landfalls']);
+            if (empty($landfalls_raw) || $landfalls_raw === '' || (is_array($landfalls_raw) && count($landfalls_raw) === 0)) {
+                $chase_data['landfalls'] = [];
+            } else {
+                $landfalls = [];
+                foreach ($landfalls_raw as $landfall) {
+                    // Re-indexed sequentially, same reasoning as tornadoes above.
+                    $landfalls[] = [
+                        'name' => isset($landfall['name']) ? sanitize_text_field($landfall['name']) : '',
+                        'lat' => isset($landfall['lat']) ? floatval($landfall['lat']) : 0,
+                        'lon' => isset($landfall['lon']) ? floatval($landfall['lon']) : 0,
+                        'time' => isset($landfall['time']) ? sanitize_text_field($landfall['time']) : '',
+                        'wind_speed' => isset($landfall['wind_speed']) ? absint($landfall['wind_speed']) : 0,
+                        'category' => isset($landfall['category']) ? sanitize_text_field($landfall['category']) : 'Unknown',
+                        'pressure' => isset($landfall['pressure']) ? absint($landfall['pressure']) : 0,
+                    ];
+                }
+                $chase_data['landfalls'] = $landfalls;
+            }
+        } else {
+            $chase_data['landfalls'] = [];
+        }
+
+        // Checkbox group — StormChasesData::sanitize_storm_mode() (via save_chase_data()
+        // below) validates against get_storm_modes() and dedupes; an unchecked group simply
+        // isn't present in $_POST at all, same as any other checkbox array.
+        $chase_data['storm_mode'] = isset($_POST['storm_mode']) ? array_map('sanitize_text_field', wp_unslash((array) $_POST['storm_mode'])) : [];
+
+        if (array_key_exists('snowfall_reports', $_POST)) {
+            $snowfall_reports_raw = wp_unslash($_POST['snowfall_reports']);
+            if (empty($snowfall_reports_raw) || $snowfall_reports_raw === '' || (is_array($snowfall_reports_raw) && count($snowfall_reports_raw) === 0)) {
+                $chase_data['snowfall_reports'] = [];
+            } else {
+                $snowfall_reports = [];
+                foreach ($snowfall_reports_raw as $snowfall) {
+                    // Re-indexed sequentially, same reasoning as tornadoes/landfalls above.
+                    $snowfall_reports[] = [
+                        'location' => isset($snowfall['location']) ? sanitize_text_field($snowfall['location']) : '',
+                        'lat' => isset($snowfall['lat']) ? floatval($snowfall['lat']) : 0,
+                        'lon' => isset($snowfall['lon']) ? floatval($snowfall['lon']) : 0,
+                        'time' => isset($snowfall['time']) ? sanitize_text_field($snowfall['time']) : '',
+                        'depth' => isset($snowfall['depth']) ? floatval($snowfall['depth']) : 0,
+                    ];
+                }
+                $chase_data['snowfall_reports'] = $snowfall_reports;
+            }
+        } else {
+            $chase_data['snowfall_reports'] = [];
+        }
         // chasedate always follows the post's publish date — same derivation used
         // for the slug in set_post_name_from_chasedate(), so the two can't diverge.
         $derived_chasedate = self::derive_chasedate_from_post_date($post->post_date);
         if ($derived_chasedate !== null) {
             $chase_data['chasedate'] = $derived_chasedate;
         } elseif (isset($_POST['chasedate'])) {
-            $posted = sanitize_text_field($_POST['chasedate']);
+            $posted = sanitize_text_field(wp_unslash($_POST['chasedate']));
             if (preg_match('/^\d{8}$/', $posted) && $posted !== '19700213') {
                 $chase_data['chasedate'] = $posted;
             }
         }
-        $chase_data['chasestates'] = isset($_POST['chasestates']) ? sanitize_text_field($_POST['chasestates']) : $chase_data['chasestates'];
-        $chase_data['chasepartners'] = isset($_POST['chasepartners']) ? sanitize_text_field($_POST['chasepartners']) : $chase_data['chasepartners'];
-        $chase_data['chasechasers'] = isset($_POST['chasechasers']) ? sanitize_text_field($_POST['chasechasers']) : $chase_data['chasechasers'];
+        $chase_data['chasestates'] = isset($_POST['chasestates']) ? sanitize_text_field(wp_unslash($_POST['chasestates'])) : $chase_data['chasestates'];
+        $chase_data['chasepartners'] = isset($_POST['chasepartners']) ? sanitize_text_field(wp_unslash($_POST['chasepartners'])) : $chase_data['chasepartners'];
+        $chase_data['chasechasers'] = isset($_POST['chasechasers']) ? sanitize_text_field(wp_unslash($_POST['chasechasers'])) : $chase_data['chasechasers'];
         $chase_data['chasemiles'] = isset($_POST['chasemiles']) ? absint($_POST['chasemiles']) : $chase_data['chasemiles'];
         $chase_data['chasehail'] = isset($_POST['chasehail']) ? floatval($_POST['chasehail']) : $chase_data['chasehail'];
-        $chase_data['chasewind'] = isset($_POST['chasewind']) ? absint($_POST['chasewind']) : $chase_data['chasewind'];
+        // Capped at 300 — anything higher is a typo, not a real observation. Enforced here
+        // (not just the field's max="300") since a typed value can exceed a number input's
+        // max attribute on submit.
+        $chase_data['chasewind'] = isset($_POST['chasewind']) ? min(300, absint($_POST['chasewind'])) : $chase_data['chasewind'];
         // chasems is submitted as chasems[] (one bullet per entry); sanitize_milestones()
         // does the real cleanup when this is stored via save_chase_data() below.
-        $chase_data['chasems'] = isset($_POST['chasems']) ? (array) $_POST['chasems'] : $chase_data['chasems'];
+        $chase_data['chasems'] = isset($_POST['chasems']) ? (array) wp_unslash($_POST['chasems']) : $chase_data['chasems'];
 
         if (!empty($chase_data['chasedate']) && preg_match('/^\d{8}$/', $chase_data['chasedate'])) {
             update_post_meta($post_id, 'chasedate', $chase_data['chasedate']);
@@ -1617,14 +1575,47 @@ class StormChaseTemplate {
             return;
         }
 
-        // Update best-chase option for this year
+        // Keeps the chase_person taxonomy (Storm_Chases_People_Taxonomies) automatically in
+        // sync with whoever's actually named in chasepartners/chasechasers on every save —
+        // the union of both fields, replacing (not appending to) whatever was assigned
+        // before, so removing a name from the text field also removes the now-stale term
+        // relationship instead of leaving it to drift. This is what makes a newly-typed name
+        // get a real, clickable profile without waiting on the Settings page's migration
+        // tool — that tool is still useful as a one-time backfill for chases saved before
+        // this existed, but every save from here on keeps itself current.
+        $person_names = array_unique(array_merge(
+            Storm_Chases_People_Taxonomies::parse_and_normalize_names($chase_data['chasepartners'] ?? ''),
+            Storm_Chases_People_Taxonomies::parse_and_normalize_names($chase_data['chasechasers'] ?? '')
+        ));
+        wp_set_object_terms($post_id, $person_names, Storm_Chases_People_Taxonomies::PEOPLE_TAXONOMY, false);
+
+        // Update best-chase option for this year, per Chase Type — sc_get_best_chases()
+        // (functions.php) normalizes/migrates the option's shape; the checkbox on the edit
+        // screen only ever reflects/sets the slot for *this* chase's own current type, so a
+        // Hurricane pick for a year never overwrites that year's Convective pick.
         if (!empty($chase_data['chasedate']) && preg_match('/^\d{8}$/', $chase_data['chasedate'])) {
             $year = substr($chase_data['chasedate'], 0, 4);
-            $best_chases = get_option('storm_chases_best_chases', []);
+            $chase_type = $chase_data['chase_type'] ?? 'Convective';
+            $best_chases = sc_get_best_chases();
+
+            // If Chase Type changed on this save, the old type's slot for this year (if it
+            // still points at this post) is now stale — the "Best Chase of the Season"
+            // checkbox only ever reflects/sets the *current* type's slot, so without this the
+            // old slot would silently keep pointing at a chase that's no longer that type.
+            if ($old_chase_type !== $chase_type && isset($best_chases[$year][$old_chase_type]) && $best_chases[$year][$old_chase_type] == $post_id) {
+                unset($best_chases[$year][$old_chase_type]);
+                if (empty($best_chases[$year])) {
+                    unset($best_chases[$year]);
+                }
+            }
+
             if (!empty($_POST['is_best_chase']) && $_POST['is_best_chase'] == '1') {
-                $best_chases[$year] = $post_id;
-            } elseif (isset($best_chases[$year]) && $best_chases[$year] == $post_id) {
-                unset($best_chases[$year]);
+                $best_chases[$year][$chase_type] = $post_id;
+            } elseif (isset($best_chases[$year][$chase_type]) && $best_chases[$year][$chase_type] == $post_id) {
+                unset($best_chases[$year][$chase_type]);
+                if (empty($best_chases[$year])) {
+                    unset($best_chases[$year]);
+                }
             }
             update_option('storm_chases_best_chases', $best_chases);
         }
@@ -1649,21 +1640,7 @@ class StormChaseTemplate {
     }
 
     public function get_chase_post_by_date($date) {
-        $args = [
-            'post_type' => self::POST_TYPE,
-            'meta_query' => [
-                [
-                    'key' => 'chasedate',
-                    'value' => $date,
-                    'compare' => '='
-                ]
-            ],
-            'posts_per_page' => 1,
-            'no_found_rows' => true,
-        ];
-
-        $query = new WP_Query($args);
-        return $query->have_posts() ? $query->posts[0] : null;
+        return sc_get_chase_post_by_date($date);
     }
 
     public function handle_trashed_post($post_id) {
@@ -1673,46 +1650,6 @@ class StormChaseTemplate {
     }
 
     public function clear_transients($post_ids = []) {
-        global $wpdb;
-
-        // Ensure $post_ids is an array
-        $post_ids = (array) $post_ids;
-        $post_ids = array_filter(array_map('absint', $post_ids));
-
-        // Define all transient prefixes to clear
-        $prefixes = [
-            'storm_chases_stats_%',
-            'storm_chases_archive_%',
-            'sc_archive_v2_%',
-            'sc_stats_v12_%'
-        ];
-
-        // Delete transients for specific post IDs
-        foreach ($post_ids as $post_id) {
-            // Delete specific post transient
-            delete_transient('storm_chases_stats_' . $post_id);
-            // Delete transients matching patterns for this post
-            foreach ($prefixes as $prefix) {
-                $wpdb->query(
-                    $wpdb->prepare(
-                        "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-                        '_transient_' . str_replace('%', $post_id . '%', $prefix),
-                        '_transient_timeout_' . str_replace('%', $post_id . '%', $prefix)
-                    )
-                );
-            }
-        }
-
-        foreach ($prefixes as $prefix) {
-            $wpdb->query(
-                $wpdb->prepare(
-                    "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-                    '_transient_' . $prefix,
-                    '_transient_timeout_' . $prefix
-                )
-            );
-        }
-
-        Storm_Chases::debug_log('Cleared storm chase transients for posts: ' . (empty($post_ids) ? 'all' : implode(', ', $post_ids)), 'info');
+        sc_clear_transients($post_ids);
     }
 }
