@@ -19,6 +19,62 @@
         "showHeading": {
             "type": "boolean",
             "default": true
+        },
+        "showOverall": {
+            "type": "boolean",
+            "default": true
+        },
+        "showConvective": {
+            "type": "boolean",
+            "default": true
+        },
+        "showHurricane": {
+            "type": "boolean",
+            "default": true
+        },
+        "showWinter": {
+            "type": "boolean",
+            "default": true
+        },
+        "showLongestChase": {
+            "type": "boolean",
+            "default": true
+        },
+        "showEfBreakdown": {
+            "type": "boolean",
+            "default": true
+        },
+        "showStormModes": {
+            "type": "boolean",
+            "default": true
+        },
+        "showTopDays": {
+            "type": "boolean",
+            "default": false
+        },
+        "topDaysCount": {
+            "type": "number",
+            "default": 10
+        },
+        "showFirstLast": {
+            "type": "boolean",
+            "default": true
+        },
+        "showNewStates": {
+            "type": "boolean",
+            "default": true
+        },
+        "showStreak": {
+            "type": "boolean",
+            "default": true
+        },
+        "showTopPeople": {
+            "type": "boolean",
+            "default": false
+        },
+        "topPeopleCount": {
+            "type": "number",
+            "default": 10
         }
     },
     "supports": {

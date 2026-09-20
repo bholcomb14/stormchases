@@ -21,6 +21,14 @@
             {type: 'text', attribute: 'heading', label: __('Heading text (blank = default)', 'stormchases')},
             {type: 'range', attribute: 'height', label: __('Map height (px)', 'stormchases'), min: 250, max: 900, step: 50},
             {type: 'checkboxGroup', attribute: 'ratings', label: __('Show EF Ratings', 'stormchases'), options: EF_RATINGS},
+            {type: 'toggle', attribute: 'showStorms', label: __('Show memorable storms', 'stormchases')},
+            {type: 'toggle', attribute: 'showHurricanes', label: __('Show hurricanes', 'stormchases')},
+            {type: 'toggle', attribute: 'showSnowfall', label: __('Show snowfall reports', 'stormchases')},
+            {type: 'toggle', attribute: 'showLegend', label: __('Show icon legend/key', 'stormchases')},
+            {type: 'toggle', attribute: 'showLayerToggles', label: __('Show visitor-facing layer toggle checkboxes', 'stormchases')},
+            {type: 'range', attribute: 'zoom', label: __('Fixed zoom level (0 = auto-fit to points)', 'stormchases'), min: 0, max: 19, step: 1},
+            {type: 'number', attribute: 'centerLat', label: __('Center latitude (used when zoom > 0)', 'stormchases'), step: '0.0001'},
+            {type: 'number', attribute: 'centerLon', label: __('Center longitude (used when zoom > 0)', 'stormchases'), step: '0.0001'},
         ],
     });
 })();

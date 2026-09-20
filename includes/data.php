@@ -4,6 +4,17 @@ if (!defined('ABSPATH')) {
 }
 
 class StormChasesData {
+    // Per-request cache, keyed by post_id — deliberately static (class-level, shared
+    // across every `new StormChasesData()` instance, since this class isn't a singleton
+    // and gets instantiated fresh all over the codebase). A single page can render more
+    // than one block/shortcode over the same chases (e.g. a Chase Stats block and a
+    // Tornado Map block together), and without this every one of them independently
+    // re-fetches and re-unserializes the same post's chase_data from scratch — real
+    // savings given real chase_data blobs run tens of KB each. Cleared per-request only
+    // (never persisted), and kept in sync by save_chase_data() below so a save followed
+    // by an immediate re-read in the same request never sees stale data.
+    private static $request_cache = [];
+
     private $meta_fields = [
         'chasedate' => ['sanitize' => 'sanitize_text_field', 'required' => true, 'type' => 'string'],
         'chasestates' => ['sanitize' => 'sanitize_text_field', 'required' => true, 'type' => 'string'],
@@ -19,13 +30,45 @@ class StormChasesData {
         'tornadoes' => ['sanitize' => 'sanitize_tornado_data', 'required' => false, 'type' => 'array'],
         'spotter_reports' => ['sanitize' => 'sanitize_spotter_reports', 'required' => false, 'type' => 'array'],
         'chasemap_track' => ['sanitize' => 'sanitize_track', 'required' => false, 'type' => 'array'],
+        'chase_type' => ['sanitize' => 'sanitize_chase_type', 'required' => false, 'type' => 'string', 'default' => 'Convective'],
+        'landfalls' => ['sanitize' => 'sanitize_landfall_data', 'required' => false, 'type' => 'array'],
+        'storm_mode' => ['sanitize' => 'sanitize_storm_mode', 'required' => false, 'type' => 'array', 'default' => []],
+        'snowfall_reports' => ['sanitize' => 'sanitize_snowfall_data', 'required' => false, 'type' => 'array'],
     ];
 
     public function get_meta_fields() {
         return $this->meta_fields;
     }
 
+    // Single source of truth for valid Chase Type values — a hardcoded, code-extensible
+    // enum (matching the ef_rating/report-type pattern elsewhere in this plugin), not a
+    // Settings-page-configurable list. Adding a future type (e.g. Fire, Monsoon) is a code
+    // change with its own field set, same as any other type here. Convective is the
+    // default for both new and every pre-2.0.0 chase (which had no concept of chase type).
+    public static function get_chase_types(): array {
+        return ['Convective', 'Hurricane', 'Winter', 'Other'];
+    }
+
+    // Saffir-Simpson category plus the two sub-hurricane-strength stages a landfall can
+    // also be logged at. Kept as a method (not a class const) to match get_chase_types()'s
+    // pattern, and because sanitize_landfall_data() below needs it as a lookup.
+    public static function get_landfall_categories(): array {
+        return ['Tropical Depression', 'Tropical Storm', 'Category 1', 'Category 2', 'Category 3', 'Category 4', 'Category 5', 'Unknown'];
+    }
+
+    // Storm mode/structure classification for Convective chases — checkbox group, not a
+    // single select, since a chase day can transition between modes (e.g. discrete
+    // supercells congealing into a QLCS later in the evening).
+    public static function get_storm_modes(): array {
+        return ['Supercell - LP', 'Supercell - Classic', 'Supercell - HP', 'Supercell - Hybrid', 'QLCS / Squall Line', 'Multicell Cluster', 'Multicell', 'Landspout / Non-supercell', 'Tropical / Landfalling Remnant', 'Other'];
+    }
+
     public function get_chase_data($post_id) {
+        $post_id = (int) $post_id;
+        if (isset(self::$request_cache[$post_id])) {
+            return self::$request_cache[$post_id];
+        }
+
         $chase_data = get_post_meta($post_id, 'chase_data', true);
 
         // Handle both JSON and PHP-serialized data
@@ -62,10 +105,16 @@ class StormChasesData {
             'tornadoes' => [],
             'spotter_reports' => [],
             'chasemap_track' => [],
+            'chase_type' => 'Convective',
+            'landfalls' => [],
+            'storm_mode' => [],
+            'snowfall_reports' => [],
         ];
 
         $chase_data = wp_parse_args($chase_data, $defaults);
-        return $this->sanitize_chase_data($chase_data);
+        $result = $this->sanitize_chase_data($chase_data);
+        self::$request_cache[$post_id] = $result;
+        return $result;
     }
 
     public function save_chase_data($post_id, $chase_data) {
@@ -91,6 +140,10 @@ class StormChasesData {
 
         $result = update_post_meta($post_id, 'chase_data', $serialized_data);
 
+        // Keep the per-request cache in sync so an immediate re-read (elsewhere in the
+        // same request) after a save doesn't see stale data.
+        self::$request_cache[(int) $post_id] = $sanitized_data;
+
         return true;
     }
 
@@ -99,8 +152,9 @@ class StormChasesData {
 
         // Sanitize fields defined in meta_fields
         foreach ($this->meta_fields as $key => $config) {
-            if ($key === 'tornadoes' || $key === 'spotter_reports') {
-                // Skip tornadoes and spotter_reports here; handle them explicitly below
+            if ($key === 'tornadoes' || $key === 'spotter_reports' || $key === 'landfalls' || $key === 'storm_mode' || $key === 'snowfall_reports') {
+                // Array fields — handled explicitly below, bypassing the generic
+                // string-sanitization branch (same pattern as tornadoes/spotter_reports).
                 continue;
             }
 
@@ -123,6 +177,9 @@ class StormChasesData {
         $sanitized['tornadoes'] = isset($data['tornadoes']) && is_array($data['tornadoes']) ? $this->sanitize_tornado_data($data['tornadoes']) : [];
         $sanitized['spotter_reports'] = isset($data['spotter_reports']) && is_array($data['spotter_reports']) ? $this->sanitize_spotter_reports($data['spotter_reports']) : [];
         $sanitized['chasemap_track'] = isset($data['chasemap_track']) && is_array($data['chasemap_track']) ? $this->sanitize_track($data['chasemap_track']) : [];
+        $sanitized['landfalls'] = isset($data['landfalls']) && is_array($data['landfalls']) ? $this->sanitize_landfall_data($data['landfalls']) : [];
+        $sanitized['storm_mode'] = isset($data['storm_mode']) && is_array($data['storm_mode']) ? $this->sanitize_storm_mode($data['storm_mode']) : [];
+        $sanitized['snowfall_reports'] = isset($data['snowfall_reports']) && is_array($data['snowfall_reports']) ? $this->sanitize_snowfall_data($data['snowfall_reports']) : [];
 
         return wp_parse_args($sanitized, [
             'chasedate' => '19700213',
@@ -136,6 +193,7 @@ class StormChasesData {
             'chasemap_id' => 0,
             'chasemaptype' => '0',
             'chasetornado' => 0,
+            'chase_type' => 'Convective',
         ]);
     }
 
@@ -143,6 +201,7 @@ class StormChasesData {
         $errors = [];
         foreach ($this->meta_fields as $key => $config) {
             if ($config['required'] && empty($data[$key])) {
+                /* translators: %s: name of the required field */
                 $errors[] = sprintf(__('%s is required.', 'stormchases'), ucfirst(str_replace('chase', '', $key)));
             }
         }
@@ -169,6 +228,79 @@ class StormChasesData {
                 'end_lon' => isset($tornado['end_lon']) ? floatval($tornado['end_lon']) : 0,
                 'photo_id' => isset($tornado['photo_id']) ? absint($tornado['photo_id']) : 0,
                 'photogenic' => !empty($tornado['photogenic']),
+            ];
+        }
+        return array_values($sanitized);
+    }
+
+    // Falls back to 'Convective' for anything not in get_chase_types() — this is a real
+    // branch point for admin-UI field visibility and public display logic (unlike most
+    // string fields here, which are just display text), so unlike ef_rating (trusted to
+    // the <select> options and left as free text) this one is strictly validated rather
+    // than just sanitized.
+    public function sanitize_chase_type($value) {
+        $value = is_string($value) ? sanitize_text_field(wp_unslash($value)) : '';
+        return in_array($value, self::get_chase_types(), true) ? $value : 'Convective';
+    }
+
+    // Mirrors sanitize_tornado_data() — one array entry per hurricane landfall logged on
+    // this chase (a storm can weaken/restrengthen between multiple landfalls on one
+    // chase, hence wind_speed/category/pressure are per-landfall, not chase-level).
+    public function sanitize_landfall_data($landfalls) {
+        if (!is_array($landfalls)) {
+            return [];
+        }
+        $sanitized = [];
+        foreach ($landfalls as $index => $landfall) {
+            $category = isset($landfall['category']) ? sanitize_text_field(wp_unslash($landfall['category'])) : 'Unknown';
+            $sanitized[$index] = [
+                'name' => isset($landfall['name']) ? $this->sanitize_for_json(wp_unslash($landfall['name'])) : '',
+                'lat' => isset($landfall['lat']) ? floatval($landfall['lat']) : 0,
+                'lon' => isset($landfall['lon']) ? floatval($landfall['lon']) : 0,
+                'time' => isset($landfall['time']) ? $this->sanitize_for_json(wp_unslash($landfall['time'])) : '',
+                'wind_speed' => isset($landfall['wind_speed']) ? absint($landfall['wind_speed']) : 0,
+                'category' => in_array($category, self::get_landfall_categories(), true) ? $category : 'Unknown',
+                'pressure' => isset($landfall['pressure']) ? absint($landfall['pressure']) : 0,
+            ];
+        }
+        return array_values($sanitized);
+    }
+
+    // Checkbox-group field, not a single select — values are validated against
+    // get_storm_modes() and deduped, silently dropping anything unrecognized rather than
+    // rejecting the whole save (matches the general tolerance of this sanitization layer).
+    public function sanitize_storm_mode($modes): array {
+        if (!is_array($modes)) {
+            return [];
+        }
+        $valid = self::get_storm_modes();
+        $sanitized = [];
+        foreach ($modes as $mode) {
+            $mode = is_string($mode) ? sanitize_text_field(wp_unslash($mode)) : '';
+            if ($mode !== '' && in_array($mode, $valid, true) && !in_array($mode, $sanitized, true)) {
+                $sanitized[] = $mode;
+            }
+        }
+        return $sanitized;
+    }
+
+    // Mirrors sanitize_landfall_data() — one array entry per snowfall report logged on a
+    // Winter-type chase. 'location' is a free-text town/place name (deliberately not
+    // reverse-geocoded from lat/lon — this plugin makes no live third-party geocoding
+    // calls anywhere else, and a manually-typed name matches the existing tornado/landfall
+    // 'name' field precedent) since a bare lat/lon means little to a reader at a glance.
+    public function sanitize_snowfall_data($entries): array {
+        if (!is_array($entries)) {
+            return [];
+        }
+        $sanitized = [];
+        foreach ($entries as $index => $entry) {
+            $sanitized[$index] = [
+                'location' => isset($entry['location']) ? $this->sanitize_for_json(wp_unslash($entry['location'])) : '',
+                'lat' => isset($entry['lat']) ? floatval($entry['lat']) : 0,
+                'lon' => isset($entry['lon']) ? floatval($entry['lon']) : 0,
+                'time' => isset($entry['time']) ? $this->sanitize_for_json(wp_unslash($entry['time'])) : '',
+                'depth' => isset($entry['depth']) ? floatval($entry['depth']) : 0,
             ];
         }
         return array_values($sanitized);

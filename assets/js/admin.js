@@ -46,6 +46,49 @@ jQuery(document).ready(function($) {
     }
 
     // -----------------------------------------------------------------------
+    // Chase Type: show/hide type-specific field groups
+    // -----------------------------------------------------------------------
+    // Reactive to the live value of #chase_type, not a static Settings toggle — unlike
+    // most feature-visibility switches in this plugin, which only gate the public-facing
+    // recap (see display_storm_chase_data() in storm_chase.php). Switching away from a
+    // type only hides its [data-chase-type-group] rows; the underlying fields/values are
+    // untouched and still submit with the form (hidden inputs still POST), so switching
+    // back restores whatever was there — save_post() persists chase_data for every type's
+    // fields regardless of which type is currently selected, only the *display* here is
+    // type-reactive.
+    const $chaseType = $('#chase_type');
+
+    function applyChaseTypeVisibility() {
+        const type = $chaseType.val();
+        $('[data-chase-type-group]').each(function() {
+            $(this).toggle($(this).data('chase-type-group') === type);
+        });
+    }
+
+    if ($chaseType.length) {
+        $chaseType.on('change', applyChaseTypeVisibility);
+        applyChaseTypeVisibility();
+    }
+
+    // -----------------------------------------------------------------------
+    // Highest Wind: flag suspiciously high values (likely typos) — the field's
+    // own max="300" is a hard cap enforced again server-side in save_post(),
+    // this is just a visual nudge above 120 (still a legitimate value in a
+    // violent tornado, so it's not blocked, just called out).
+    // -----------------------------------------------------------------------
+    const $chaseWind = $('#chasewind');
+
+    function applyChaseWindWarning() {
+        const value = parseInt($chaseWind.val(), 10);
+        $chaseWind.toggleClass('sc-field-warning', !isNaN(value) && value > 120);
+    }
+
+    if ($chaseWind.length) {
+        $chaseWind.on('input change', applyChaseWindWarning);
+        applyChaseWindWarning();
+    }
+
+    // -----------------------------------------------------------------------
     // Tornado entries: add / remove / reorder / collapse
     // -----------------------------------------------------------------------
 
@@ -197,7 +240,261 @@ jQuery(document).ready(function($) {
     });
 
     // -----------------------------------------------------------------------
-    // Tornado location picker — click a map to fill lat/lon fields
+    // Hurricane landfall entries: add / remove / reorder / collapse
+    // -----------------------------------------------------------------------
+    // Same pattern as tornado entries above (add/remove/move/collapse, AJAX-added blank
+    // entries, drag-to-reorder), scoped to its own #landfalls-container and its own
+    // landfall-*/remove-landfall class names throughout — deliberately kept as a separate,
+    // parallel block rather than factored into one shared controller function: the two
+    // entry types' fields/summary logic differ enough (no photo upload, no EF rating, a
+    // different summary format) that a shared factory would need as many parameters as
+    // there are differences, without a live-tested payoff — see CLAUDE.md's own note about
+    // keeping this pattern as a single well-understood shape per entry type rather than
+    // over-abstracting on the first repeat.
+
+    const $landfallContainer = $('#landfalls-container');
+
+    function landfallSummaryText($entry) {
+        const name = $.trim($entry.find('input[name$="[name]"]').val()) || 'Unnamed Landfall';
+        const category = $entry.find('select[name$="[category]"]').val() || 'Unknown';
+        return name + ' — ' + category;
+    }
+
+    function refreshLandfallSummary($entry) {
+        $entry.find('.landfall-entry-summary').text(landfallSummaryText($entry));
+    }
+
+    function setLandfallCollapsed($entry, collapsed) {
+        $entry.toggleClass('is-collapsed', collapsed);
+        $entry.find('.landfall-toggle .dashicons')
+            .toggleClass('dashicons-arrow-down-alt2', collapsed)
+            .toggleClass('dashicons-arrow-up-alt2', !collapsed);
+        if (collapsed) {
+            refreshLandfallSummary($entry);
+        }
+    }
+
+    function renumberLandfalls() {
+        const $entries = $landfallContainer.find('.landfall-entry');
+        $entries.each(function(i) {
+            $(this).find('[name^="landfalls["]').each(function() {
+                this.name = this.name.replace(/^landfalls\[\d+\]/, 'landfalls[' + i + ']');
+            });
+            $(this).find('.landfall-move-up').prop('disabled', i === 0);
+            $(this).find('.landfall-move-down').prop('disabled', i === $entries.length - 1);
+        });
+        $landfallContainer.data('landfall-count', $entries.length);
+    }
+
+    $('#add-landfall').on('click', function() {
+        const index = $landfallContainer.find('.landfall-entry').length;
+        $landfallContainer.find('input[name="landfalls"]').remove();
+
+        $.ajax({
+            url: stormChasesSettings.ajaxUrl,
+            method: 'POST',
+            data: {
+                action: 'storm_chases_get_landfall_entry',
+                nonce: stormChasesSettings.nonce,
+                index: index
+            },
+            success: function(response) {
+                if (response.success && response.data.entry) {
+                    $(response.data.entry).appendTo($landfallContainer);
+                    renumberLandfalls();
+                } else {
+                    showNotice('error', 'Failed to add landfall entry.');
+                }
+            },
+            error: function(xhr, status, error) {
+                showNotice('error', 'Error communicating with server: ' + error);
+                console.error('AJAX error:', status, error, xhr.responseText);
+            }
+        });
+    });
+
+    $landfallContainer.sortable({
+        handle: '.tornado-drag-handle',
+        axis: 'y',
+        placeholder: 'tornado-entry-placeholder',
+        forcePlaceholderSize: true,
+        update: function() {
+            renumberLandfalls();
+        }
+    });
+
+    $landfallContainer.on('click', '.landfall-toggle, .landfall-entry-summary', function() {
+        const $entry = $(this).closest('.landfall-entry');
+        setLandfallCollapsed($entry, !$entry.hasClass('is-collapsed'));
+    });
+
+    $landfallContainer.on('click', '.landfall-done', function() {
+        setLandfallCollapsed($(this).closest('.landfall-entry'), true);
+    });
+
+    $landfallContainer.on('click', '.remove-landfall', function() {
+        $(this).closest('.landfall-entry').remove();
+        $landfallContainer.find('input[name="landfalls"]').remove();
+        if ($landfallContainer.find('.landfall-entry').length === 0) {
+            $landfallContainer.append('<input type="hidden" name="landfalls" value="">');
+        } else {
+            renumberLandfalls();
+        }
+    });
+
+    $landfallContainer.on('click', '.landfall-move-up', function() {
+        const $entry = $(this).closest('.landfall-entry');
+        const $prev = $entry.prev('.landfall-entry');
+        if ($prev.length) {
+            $entry.insertBefore($prev);
+            renumberLandfalls();
+        }
+    });
+
+    $landfallContainer.on('click', '.landfall-move-down', function() {
+        const $entry = $(this).closest('.landfall-entry');
+        const $next = $entry.next('.landfall-entry');
+        if ($next.length) {
+            $entry.insertAfter($next);
+            renumberLandfalls();
+        }
+    });
+
+    $landfallContainer.on('input change', 'input[name$="[name]"], select[name$="[category]"]', function() {
+        refreshLandfallSummary($(this).closest('.landfall-entry'));
+    });
+
+    $landfallContainer.find('.landfall-entry').each(function() {
+        setLandfallCollapsed($(this), true);
+    });
+    renumberLandfalls();
+
+    // -----------------------------------------------------------------------
+    // Winter snowfall entries: add / remove / reorder / collapse
+    // -----------------------------------------------------------------------
+    // Same parallel-controller pattern as the landfall block above, for the same reason —
+    // see the comment there.
+
+    const $snowfallContainer = $('#snowfall-container');
+
+    function snowfallSummaryText($entry) {
+        const location = $.trim($entry.find('input[name$="[location]"]').val()) || 'Unnamed Location';
+        const depth = parseFloat($entry.find('input[name$="[depth]"]').val()) || 0;
+        return location + ' — ' + depth.toFixed(1) + '"';
+    }
+
+    function refreshSnowfallSummary($entry) {
+        $entry.find('.snowfall-entry-summary').text(snowfallSummaryText($entry));
+    }
+
+    function setSnowfallCollapsed($entry, collapsed) {
+        $entry.toggleClass('is-collapsed', collapsed);
+        $entry.find('.snowfall-toggle .dashicons')
+            .toggleClass('dashicons-arrow-down-alt2', collapsed)
+            .toggleClass('dashicons-arrow-up-alt2', !collapsed);
+        if (collapsed) {
+            refreshSnowfallSummary($entry);
+        }
+    }
+
+    function renumberSnowfall() {
+        const $entries = $snowfallContainer.find('.snowfall-entry');
+        $entries.each(function(i) {
+            $(this).find('[name^="snowfall_reports["]').each(function() {
+                this.name = this.name.replace(/^snowfall_reports\[\d+\]/, 'snowfall_reports[' + i + ']');
+            });
+            $(this).find('.snowfall-move-up').prop('disabled', i === 0);
+            $(this).find('.snowfall-move-down').prop('disabled', i === $entries.length - 1);
+        });
+        $snowfallContainer.data('snowfall-count', $entries.length);
+    }
+
+    $('#add-snowfall').on('click', function() {
+        const index = $snowfallContainer.find('.snowfall-entry').length;
+        $snowfallContainer.find('input[name="snowfall_reports"]').remove();
+
+        $.ajax({
+            url: stormChasesSettings.ajaxUrl,
+            method: 'POST',
+            data: {
+                action: 'storm_chases_get_snowfall_entry',
+                nonce: stormChasesSettings.nonce,
+                index: index
+            },
+            success: function(response) {
+                if (response.success && response.data.entry) {
+                    $(response.data.entry).appendTo($snowfallContainer);
+                    renumberSnowfall();
+                } else {
+                    showNotice('error', 'Failed to add snowfall entry.');
+                }
+            },
+            error: function(xhr, status, error) {
+                showNotice('error', 'Error communicating with server: ' + error);
+                console.error('AJAX error:', status, error, xhr.responseText);
+            }
+        });
+    });
+
+    $snowfallContainer.sortable({
+        handle: '.tornado-drag-handle',
+        axis: 'y',
+        placeholder: 'tornado-entry-placeholder',
+        forcePlaceholderSize: true,
+        update: function() {
+            renumberSnowfall();
+        }
+    });
+
+    $snowfallContainer.on('click', '.snowfall-toggle, .snowfall-entry-summary', function() {
+        const $entry = $(this).closest('.snowfall-entry');
+        setSnowfallCollapsed($entry, !$entry.hasClass('is-collapsed'));
+    });
+
+    $snowfallContainer.on('click', '.snowfall-done', function() {
+        setSnowfallCollapsed($(this).closest('.snowfall-entry'), true);
+    });
+
+    $snowfallContainer.on('click', '.remove-snowfall', function() {
+        $(this).closest('.snowfall-entry').remove();
+        $snowfallContainer.find('input[name="snowfall_reports"]').remove();
+        if ($snowfallContainer.find('.snowfall-entry').length === 0) {
+            $snowfallContainer.append('<input type="hidden" name="snowfall_reports" value="">');
+        } else {
+            renumberSnowfall();
+        }
+    });
+
+    $snowfallContainer.on('click', '.snowfall-move-up', function() {
+        const $entry = $(this).closest('.snowfall-entry');
+        const $prev = $entry.prev('.snowfall-entry');
+        if ($prev.length) {
+            $entry.insertBefore($prev);
+            renumberSnowfall();
+        }
+    });
+
+    $snowfallContainer.on('click', '.snowfall-move-down', function() {
+        const $entry = $(this).closest('.snowfall-entry');
+        const $next = $entry.next('.snowfall-entry');
+        if ($next.length) {
+            $entry.insertAfter($next);
+            renumberSnowfall();
+        }
+    });
+
+    $snowfallContainer.on('input change', 'input[name$="[location]"], input[name$="[depth]"]', function() {
+        refreshSnowfallSummary($(this).closest('.snowfall-entry'));
+    });
+
+    $snowfallContainer.find('.snowfall-entry').each(function() {
+        setSnowfallCollapsed($(this), true);
+    });
+    renumberSnowfall();
+
+    // -----------------------------------------------------------------------
+    // Location picker — click a map to fill lat/lon fields. Shared by tornado
+    // entries (.tornado-pick-location) and landfall entries (.landfall-pick-location).
     // -----------------------------------------------------------------------
 
     let scLocationPickerMap = null;
@@ -235,10 +532,13 @@ jQuery(document).ready(function($) {
         });
     }
 
-    $tornadoContainer.on('click', '.tornado-pick-location', function() {
-        const $entryBody = $(this).closest('.tornado-entry-body');
-        const latField = $(this).data('lat-field');
-        const lonField = $(this).data('lon-field');
+    // Shared by both .tornado-pick-location (tornado entries) and .landfall-pick-location
+    // (landfall entries) below — the field lookup is generic (any entry body with
+    // lat/lon-suffixed input names), so one function serves both entry types.
+    function openLocationPickerFor($button) {
+        const $entryBody = $button.closest('.tornado-entry-body');
+        const latField = $button.data('lat-field');
+        const lonField = $button.data('lon-field');
         scLocationPickerTarget = {
             $lat: $entryBody.find('input[name$="[' + latField + ']"]'),
             $lon: $entryBody.find('input[name$="[' + lonField + ']"]'),
@@ -271,6 +571,18 @@ jQuery(document).ready(function($) {
                 $locationPickerConfirm.prop('disabled', false);
             }
         }, 0);
+    }
+
+    $tornadoContainer.on('click', '.tornado-pick-location', function() {
+        openLocationPickerFor($(this));
+    });
+
+    $landfallContainer.on('click', '.landfall-pick-location', function() {
+        openLocationPickerFor($(this));
+    });
+
+    $snowfallContainer.on('click', '.snowfall-pick-location', function() {
+        openLocationPickerFor($(this));
     });
 
     function closeLocationPicker() {

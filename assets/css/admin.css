@@ -63,6 +63,16 @@
     left: 20px;
 }
 
+/* Add New Storm Chase wizard */
+.storm-chases-wizard-steps {
+    font-size: 14px;
+    color: #646970;
+}
+
+.storm-chases-wizard-steps strong {
+    color: #1d2327;
+}
+
 /* Meta Box Styles */
 .storm-chases-meta-box {
     width: 100%;
@@ -149,11 +159,15 @@
     cursor: default;
 }
 
-.tornado-entry-header .remove-tornado {
+.tornado-entry-header .remove-tornado,
+.tornado-entry-header .remove-landfall,
+.tornado-entry-header .remove-snowfall {
     color: #a00;
 }
 
-.tornado-entry-summary {
+.tornado-entry-summary,
+.landfall-entry-summary,
+.snowfall-entry-summary {
     flex: 1 1 auto;
     text-align: left;
     background: none;
@@ -171,7 +185,9 @@
     padding: 10px 12px;
 }
 
-.tornado-done {
+.tornado-done,
+.landfall-done,
+.snowfall-done {
     margin-top: 6px;
 }
 
@@ -214,6 +230,11 @@
 .chasems-item .remove-milestone {
     flex: 0 0 auto;
     color: #a00;
+}
+
+.sc-field-warning {
+    background: #fce4e4 !important;
+    border-color: #d63638 !important;
 }
 
 .upload-tornado-photo-button {

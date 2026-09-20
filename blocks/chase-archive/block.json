@@ -1,0 +1,49 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 2,
+    "name": "stormchases/chase-archive",
+    "title": "Chase Archive",
+    "category": "stormchases",
+    "icon": "list-view",
+    "description": "List of past storm chases for a chosen year or all time — block equivalent of [scarchive].",
+    "textdomain": "stormchases",
+    "attributes": {
+        "year": {
+            "type": "string",
+            "default": ""
+        },
+        "show": {
+            "type": "number",
+            "default": 2000
+        },
+        "heading": {
+            "type": "string",
+            "default": ""
+        },
+        "showHeading": {
+            "type": "boolean",
+            "default": true
+        },
+        "showTornadoIcon": {
+            "type": "boolean",
+            "default": false
+        },
+        "showHailIcon": {
+            "type": "boolean",
+            "default": false
+        },
+        "showWindIcon": {
+            "type": "boolean",
+            "default": false
+        },
+        "showReportsIcon": {
+            "type": "boolean",
+            "default": false
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "editorScript": "stormchases-chase-archive-editor",
+    "render": "file:./render.php"
+}

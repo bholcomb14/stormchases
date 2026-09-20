@@ -7,10 +7,12 @@ global $post;
 $data_handler = new StormChasesData();
 $chase_data   = $data_handler->get_chase_data($post->ID);
 
-// Determine whether this post is flagged as best chase for its year
-$best_chases    = get_option('storm_chases_best_chases', []);
+// Determine whether this post is flagged as best chase for its year AND its own type —
+// Best Chase of the Season is tracked per type (Convective/Hurricane/Winter each get their
+// own pick for a given year), see sc_get_best_chases() in functions.php.
+$best_chases    = sc_get_best_chases();
 $chase_year     = substr($chase_data['chasedate'], 0, 4);
-$is_best_chase  = isset($best_chases[$chase_year]) && $best_chases[$chase_year] == $post->ID;
+$is_best_chase  = isset($best_chases[$chase_year][$chase_data['chase_type']]) && $best_chases[$chase_year][$chase_data['chase_type']] == $post->ID;
 ?>
 
 <table class="storm-chases-meta-box">
@@ -19,6 +21,17 @@ $is_best_chase  = isset($best_chases[$chase_year]) && $best_chases[$chase_year] 
         <td>
             <input type="text" id="chasedate" name="chasedate" value="<?php echo esc_attr($chase_data['chasedate']); ?>" readonly style="background:#f0f0f0; cursor:default;">
             <p class="description"><?php esc_html_e('Always matches the Publish date and the URL slug. Change the Publish date in the sidebar and this — plus the slug — updates automatically.', 'stormchases'); ?></p>
+        </td>
+    </tr>
+    <tr>
+        <th><label for="chase_type"><?php esc_html_e('Chase Type', 'stormchases'); ?></label></th>
+        <td>
+            <select id="chase_type" name="chase_type">
+                <?php foreach (StormChasesData::get_chase_types() as $type) : ?>
+                    <option value="<?php echo esc_attr($type); ?>" <?php selected($chase_data['chase_type'], $type); ?>><?php echo esc_html($type); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <p class="description"><?php esc_html_e('Changes which fields below apply. Switching away from a type hides its fields without deleting their data — switch back and it\'s still there.', 'stormchases'); ?></p>
         </td>
     </tr>
     <tr>
@@ -37,13 +50,30 @@ $is_best_chase  = isset($best_chases[$chase_year]) && $best_chases[$chase_year] 
         <th><label for="chasemiles"><?php esc_html_e('Miles Logged', 'stormchases'); ?></label></th>
         <td><input type="number" id="chasemiles" name="chasemiles" value="<?php echo esc_attr($chase_data['chasemiles']); ?>" min="0" max="9999"></td>
     </tr>
-    <tr>
+    <tr data-chase-type-group="Convective">
         <th><label for="chasehail"><?php esc_html_e('Largest Hail (in.)', 'stormchases'); ?></label></th>
         <td><input type="number" id="chasehail" name="chasehail" value="<?php echo esc_attr($chase_data['chasehail']); ?>" step="0.01" min="0" max="9.99"></td>
     </tr>
+    <tr data-chase-type-group="Convective">
+        <th><label><?php esc_html_e('Storm Mode', 'stormchases'); ?></label></th>
+        <td>
+            <fieldset>
+                <?php foreach (StormChasesData::get_storm_modes() as $mode) : ?>
+                    <label style="display:block;margin-bottom:4px;">
+                        <input type="checkbox" name="storm_mode[]" value="<?php echo esc_attr($mode); ?>" <?php checked(in_array($mode, $chase_data['storm_mode'], true)); ?>>
+                        <?php echo esc_html($mode); ?>
+                    </label>
+                <?php endforeach; ?>
+            </fieldset>
+            <p class="description"><?php esc_html_e('Select every mode that applied — a chase day can transition between them (e.g. discrete supercells congealing into a squall line later on).', 'stormchases'); ?></p>
+        </td>
+    </tr>
     <tr>
         <th><label for="chasewind"><?php esc_html_e('Highest Wind (mph)', 'stormchases'); ?></label></th>
-        <td><input type="number" id="chasewind" name="chasewind" value="<?php echo esc_attr($chase_data['chasewind']); ?>" min="0" max="999"></td>
+        <td>
+            <input type="number" id="chasewind" name="chasewind" value="<?php echo esc_attr($chase_data['chasewind']); ?>" min="0" max="300">
+            <p class="description"><?php esc_html_e('Capped at 300 — anything higher is almost certainly a typo. Values over 120 are flagged for a second look but still accepted.', 'stormchases'); ?></p>
+        </td>
     </tr>
     <tr>
         <th><label><?php esc_html_e('Chase Milestones', 'stormchases'); ?></label></th>
@@ -71,7 +101,8 @@ $is_best_chase  = isset($best_chases[$chase_year]) && $best_chases[$chase_year] 
         <td>
             <input type="checkbox" id="is_best_chase" name="is_best_chase" value="1" <?php checked($is_best_chase); ?>>
             <label for="is_best_chase"><?php esc_html_e('Mark as the best/favorite chase of this season', 'stormchases'); ?></label>
-            <p class="description"><?php echo esc_html(sprintf(__('Only one chase per season can be the best. Checking this will replace any previous selection for %s.', 'stormchases'), $chase_year ?: __('this year', 'stormchases'))); ?></p>
+            <?php /* translators: 1: chase type (e.g. Convective, Hurricane), 2: chase year or "this year" */ ?>
+            <p class="description"><?php echo esc_html(sprintf(__('Only one chase per season, per Chase Type, can be the best — a Hurricane pick and a Convective pick for the same year don\'t conflict. Checking this will replace any previous %1$s selection for %2$s.', 'stormchases'), $chase_data['chase_type'], $chase_year ?: __('this year', 'stormchases'))); ?></p>
         </td>
     </tr>
     <?php endif; ?>
@@ -81,47 +112,34 @@ $is_best_chase  = isset($best_chases[$chase_year]) && $best_chases[$chase_year] 
             <p class="description"><?php esc_html_e('Drag, or use the arrows, to reorder. The top entry displays first on the public chase page. Click an entry to expand it for editing.', 'stormchases'); ?></p>
             <div id="tornadoes-container" data-tornado-count="<?php echo esc_attr(count($chase_data['tornadoes'])); ?>">
                 <?php foreach (array_values($chase_data['tornadoes']) as $index => $tornado) : ?>
-                    <div class="tornado-entry">
-                        <div class="tornado-entry-header">
-                            <span class="dashicons dashicons-move tornado-drag-handle" title="<?php esc_attr_e('Drag to reorder', 'stormchases'); ?>"></span>
-                            <button type="button" class="button-link tornado-move-up" title="<?php esc_attr_e('Move up', 'stormchases'); ?>"><span class="dashicons dashicons-arrow-up-alt2"></span></button>
-                            <button type="button" class="button-link tornado-move-down" title="<?php esc_attr_e('Move down', 'stormchases'); ?>"><span class="dashicons dashicons-arrow-down-alt2"></span></button>
-                            <button type="button" class="tornado-entry-summary"><?php echo esc_html(($tornado['name'] ?: __('Unnamed Tornado', 'stormchases')) . ' — ' . ($tornado['ef_rating'] ?? 'Unrated')); ?></button>
-                            <button type="button" class="button-link tornado-toggle" title="<?php esc_attr_e('Expand or collapse', 'stormchases'); ?>"><span class="dashicons dashicons-arrow-down-alt2"></span></button>
-                            <button type="button" class="button-link remove-tornado" title="<?php esc_attr_e('Remove tornado', 'stormchases'); ?>"><span class="dashicons dashicons-no-alt"></span></button>
-                        </div>
-                        <div class="tornado-entry-body">
-                            <label><?php esc_html_e('Name', 'stormchases'); ?> <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][name]" value="<?php echo esc_attr($tornado['name'] ?? ''); ?>"></label>
-                            <label><?php esc_html_e('Latitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][lat]" value="<?php echo esc_attr($tornado['lat'] ?? 0); ?>"></label>
-                            <label><?php esc_html_e('Longitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][lon]" value="<?php echo esc_attr($tornado['lon'] ?? 0); ?>"></label>
-                            <button type="button" class="button tornado-pick-location" data-lat-field="lat" data-lon-field="lon"><?php esc_html_e('📍 Pick Location on Map', 'stormchases'); ?></button>
-                            <label><?php esc_html_e('EF Rating', 'stormchases'); ?>
-                                <select name="tornadoes[<?php echo esc_attr($index); ?>][ef_rating]">
-                                    <?php
-                                    $ratings = ['Unrated', 'EF-U', 'EF-0', 'EF-1', 'EF-2', 'EF-3', 'EF-4', 'EF-5'];
-                                    foreach ($ratings as $rating) {
-                                        echo '<option value="' . esc_attr($rating) . '" ' . selected($tornado['ef_rating'] ?? 'Unrated', $rating, false) . '>' . esc_html($rating) . '</option>';
-                                    }
-                                    ?>
-                                </select>
-                            </label>
-                            <label><?php esc_html_e('Start Time', 'stormchases'); ?> <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][start_time]" value="<?php echo esc_attr($tornado['start_time'] ?? ''); ?>"></label>
-                            <label><?php esc_html_e('End Time', 'stormchases'); ?> <input type="text" name="tornadoes[<?php echo esc_attr($index); ?>][end_time]" value="<?php echo esc_attr($tornado['end_time'] ?? ''); ?>"></label>
-                            <label><?php esc_html_e('End Latitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][end_lat]" value="<?php echo esc_attr($tornado['end_lat'] ?? 0); ?>"></label>
-                            <label><?php esc_html_e('End Longitude', 'stormchases'); ?> <input type="number" step="0.0001" name="tornadoes[<?php echo esc_attr($index); ?>][end_lon]" value="<?php echo esc_attr($tornado['end_lon'] ?? 0); ?>"></label>
-                            <button type="button" class="button tornado-pick-location" data-lat-field="end_lat" data-lon-field="end_lon"><?php esc_html_e('📍 Pick End Location on Map', 'stormchases'); ?></button>
-                            <label><?php esc_html_e('Photo', 'stormchases'); ?>
-                                <input type="hidden" class="tornado-photo-id" name="tornadoes[<?php echo esc_attr($index); ?>][photo_id]" value="<?php echo esc_attr($tornado['photo_id'] ?? 0); ?>">
-                                <input type="text" class="tornado-photo-url" value="<?php echo esc_attr(wp_get_attachment_url($tornado['photo_id'] ?? 0)); ?>" readonly>
-                                <button type="button" class="upload-tornado-photo-button button"><?php esc_html_e('Upload Photo', 'stormchases'); ?></button>
-                            </label>
-                            <label><input type="checkbox" name="tornadoes[<?php echo esc_attr($index); ?>][photogenic]" <?php checked($tornado['photogenic'] ?? false); ?>> <?php esc_html_e('Photogenic', 'stormchases'); ?></label>
-                            <button type="button" class="button tornado-done"><?php esc_html_e('Done', 'stormchases'); ?></button>
-                        </div>
-                    </div>
+                    <?php echo sc_render_tornado_entry_html($index, $tornado, false); // collapsed — see sc_render_tornado_entry_html() ?>
                 <?php endforeach; ?>
             </div>
             <button type="button" id="add-tornado" class="button"><?php esc_html_e('Add Tornado', 'stormchases'); ?></button>
+        </td>
+    </tr>
+    <tr data-chase-type-group="Hurricane">
+        <th><label><?php esc_html_e('Hurricane Landfalls', 'stormchases'); ?></label></th>
+        <td>
+            <p class="description"><?php esc_html_e('One entry per landfall — a storm can weaken and restrengthen between multiple landfalls on the same chase, so wind speed, category, and pressure are logged per landfall.', 'stormchases'); ?></p>
+            <div id="landfalls-container" data-landfall-count="<?php echo esc_attr(count($chase_data['landfalls'])); ?>">
+                <?php foreach (array_values($chase_data['landfalls']) as $index => $landfall) : ?>
+                    <?php echo sc_render_landfall_entry_html($index, $landfall, false); // collapsed — see sc_render_landfall_entry_html() ?>
+                <?php endforeach; ?>
+            </div>
+            <button type="button" id="add-landfall" class="button"><?php esc_html_e('Add Landfall', 'stormchases'); ?></button>
+        </td>
+    </tr>
+    <tr data-chase-type-group="Winter">
+        <th><label><?php esc_html_e('Snowfall Reports', 'stormchases'); ?></label></th>
+        <td>
+            <p class="description"><?php esc_html_e('One entry per location/time a snowfall depth was recorded. A town/place name is included since a bare coordinate means little at a glance.', 'stormchases'); ?></p>
+            <div id="snowfall-container" data-snowfall-count="<?php echo esc_attr(count($chase_data['snowfall_reports'])); ?>">
+                <?php foreach (array_values($chase_data['snowfall_reports']) as $index => $snowfall) : ?>
+                    <?php echo sc_render_snowfall_entry_html($index, $snowfall, false); // collapsed — see sc_render_snowfall_entry_html() ?>
+                <?php endforeach; ?>
+            </div>
+            <button type="button" id="add-snowfall" class="button"><?php esc_html_e('Add Snowfall Report', 'stormchases'); ?></button>
         </td>
     </tr>
     <tr>
@@ -165,6 +183,7 @@ $is_best_chase  = isset($best_chases[$chase_year]) && $best_chases[$chase_year] 
         <td>
             <?php
             $report_count = count($chase_data['spotter_reports']);
+            /* translators: %d: number of Spotter Network reports attached to this chase */
             echo esc_html(sprintf(_n('%d report submitted', '%d reports submitted', $report_count, 'stormchases'), $report_count));
             ?>
         </td>

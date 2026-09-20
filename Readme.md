@@ -1,51 +1,54 @@
 # StormChases WordPress Plugin
 
-![Plugin Version](https://img.shields.io/badge/version-1.9.2-blue.svg) ![License](https://img.shields.io/badge/license-GPLv2-blue.svg) ![WordPress](https://img.shields.io/badge/WordPress-6.1%2B-blue.svg) ![PHP](https://img.shields.io/badge/PHP-7.4%2B-blue.svg)
+![Plugin Version](https://img.shields.io/badge/version-2.0.0-blue.svg) ![License](https://img.shields.io/badge/license-GPLv2-blue.svg) ![WordPress](https://img.shields.io/badge/WordPress-6.1%2B-blue.svg) ![PHP](https://img.shields.io/badge/PHP-7.4%2B-blue.svg)
 
-A WordPress plugin designed for storm chasers by a storm chaser to create and manage detailed chase logs using a custom post type (`storm_chase`). Log chase details — tornadoes observed, Spotter Network reports, and weather conditions — with optional OpenStreetMap or Google Maps integration. Provides `[scarchive]`, `[scstats]`, `[sc_tornado_map]`, and `[sc_reports]` shortcodes for public-facing pages, plus Gutenberg block equivalents of the map/list/stats shortcodes (Tornado Map, Spotter Reports, Tornado List, Chase Stats) for use in the block editor. The minimum WordPress version was raised from 5.0 to 6.1 for the blocks' server-side rendering support; shortcodes remain the primary path and are unaffected.
+### ⬇️ [Download the Latest Release](https://github.com/bholcomb14/stormchases/releases)
+
+See it live at [benholcomb.com/tech/storm-chases-wordpress-plugin](https://www.benholcomb.com/tech/storm-chases-wordpress-plugin/).
+
+A WordPress plugin designed for storm chasers by a storm chaser to create and manage detailed chase logs using a custom post type (`storm_chase`). Log chase details — tornadoes observed, Spotter Network reports, and weather conditions — with optional OpenStreetMap or Google Maps integration. Public-facing pages (an archive, aggregate stats, an interactive tornado map, and a Spotter Network reports map) are built entirely from Gutenberg blocks in the block editor. **As of 2.0.0, the plugin is blocks-only** — the equivalent shortcodes (`[scarchive]`, `[scstats]`, `[sc_tornado_map]`, `[sc_reports]`) have been removed now that every one of them has a block equivalent. If any existing page content still has one of those shortcodes typed in directly, swap it for the matching block before upgrading — the shortcode text will otherwise just show up literally on the page instead of rendering.
 
 ## Features
 
 - **Custom Post Type**: Manage storm chase logs with the `storm_chase` post type, accessible at `/chases/YYYYMMDD/` (e.g., `/chases/20250608/`).
+- **Guided "Add New Storm Chase" wizard**: Creating a chase walks through the required basics (date, chase type, states, miles, chase partners) first, then optional weather details and a chase map upload, before landing on the same edit screen used for every existing chase. Logging several chases in one sitting? "Add Another Chase" on the last step starts a fresh wizard right away — each one is already saved as a draft either way.
 - **Meta Data Fields**: Capture detailed chase information:
   - **Chase Date** (auto-derived from publish date, YYYYMMDD)
   - **States Chased** (required, comma-separated state/province codes, e.g., `TX,OK,AB`)
-  - **Chase Partners** (optional, defaults to `Solo`)
-  - **Chasers Encountered** (optional, defaults to `None`)
+  - **Chase Partners** (optional, defaults to `Solo`) — each name is automatically kept as a real, reusable person profile (autocomplete-as-you-type, plus an optional website and location) instead of just free text; see Chase People Profiles below.
+  - **Chasers Encountered** (optional, defaults to `None`) — same shared profile list as Chase Partners, not a separate one. Someone tagged as both a partner and an encountered chaser (chased with them a few times, ran into them many more) shows one combined "other chases" popup, not two, labeled with which role they were in each time.
   - **Miles Logged** (optional, 0–9999)
   - **Largest Hail** (optional, 0–9.99 inches)
-  - **Highest Wind** (optional, 0–999 mph)
+  - **Highest Wind** (optional, 0–300 mph — capped since anything higher is almost certainly a typo; flagged for a second look above 120)
+  - **Chase Type** — Convective (default), Hurricane, Winter, or Other. Switching type shows/hides the relevant fields without discarding whatever was already entered for the others. Convective chases can tag **Storm Mode** (one or more of Supercell - LP, Supercell - Classic, Supercell - HP, Supercell - Hybrid, QLCS/Squall Line, Multicell Cluster, Multicell, Landspout/Non-supercell, Tropical/Landfalling Remnant, Other).
   - **Chase Milestones** (optional, bullet-point list — e.g., "First July tornado", "First Wisconsin tornado")
   - **Best Chase of the Season** flag (checkbox — one per year, shown when the feature is enabled)
   - **Chase Map** (optional): a JPEG/PNG/GIF image, or a GPS track (`.kml`, `.gpx`, `.nmea`). Multiple GPS track files for the same day (e.g., a log split by a device restart) are merged into a single chronological track, with gap markers where GPS signal was lost between files.
   - **Tornadoes Witnessed** (array, with name, coordinates, EF rating, start/end times, end coordinates, photo ID, and photogenic flag)
+  - **Hurricane Landfalls** (array, shown only when Chase Type is Hurricane — name, coordinates, time, wind speed, Saffir-Simpson category, and lowest recorded pressure per landfall)
   - **Spotter Network Reports** (array, imported via CSV)
-- **Shortcodes**:
-  - `[scarchive]` — list storm chases, filterable by year or post count
-  - `[scstats]` — aggregated chase statistics for all time or a specific year
-  - `[sc_tornado_map]` — interactive map of all tornadoes with clickable modals, marker icons colored by
-    EF rating (purple EF-5 down to aqua EF-0, gray for unrated), with a legend and a fullscreen toggle
-  - `[sc_reports]` — interactive map + list of all Spotter Network reports with clickable modals, marker
-    icons colored/shaped by report type (Tornado, Hail, Wind, Funnel Cloud, Wall Cloud, Damage), with a
-    legend and a fullscreen toggle
-- **Blocks**: Gutenberg block equivalents of four of the shortcodes above, with settings exposed as
-  block-sidebar controls instead of shortcode attributes:
-  - **Tornado Map** — equivalent of `[sc_tornado_map]`, adds an EF-rating filter (show only a chosen
-    subset of severities) and a map-height slider not available via the shortcode
-  - **Spotter Reports** — equivalent of `[sc_reports]`, adds a report-type filter and a map-height slider
-  - **Tornado List** — equivalent of `[scstats tornadoes="true"]`
-  - **Chase Stats** — equivalent of `[scstats]`
-- **Map Providers**: Choose between **OpenStreetMap** (Leaflet.js, no API key required) or **Google Maps** (API key required) in plugin settings.
-- **GPS Track Playback**: Chase maps built from a GPS track include a start → end scrubber that redraws the route up to a point in time and shows the current percentage through the track. The map is displayed after the chase recap summary, just above the full write-up.
+- **Blocks** (grouped under a **Storm Chases** category in the block inserter):
+  - **Tornado Map** — interactive map with a marker for every tornado logged, colored by EF rating (purple EF-5 down to aqua EF-0, gray for unrated), each opening a detail modal, with a legend and a fullscreen toggle. Also overlays logged hurricane landfalls and Winter snowfall reports, plus optionally simple "memorable storm"/hurricane points (own icon, own click-through modal with an optional photo) sourced from the companion **Location Map** plugin's points table, if that plugin is active — an interim bridge for older hurricane chases not yet backfilled with native landfall data (automatically skipped once a matching native landfall exists, so the two sources don't double up). Sidebar controls: Year, EF-rating filter, independent on/off toggles for the storm/hurricane/snowfall overlays, a show/hide toggle for the legend, a toggle to show visitor-facing per-category checkboxes on the published page (off by default), a fixed zoom/center override (default: auto-fit to whatever's shown), and a map-height slider.
+  - **Spotter Reports** — interactive map + sorted list of all Spotter Network reports, colored/shaped by report type (Tornado, Hail, Wind, Funnel Cloud, Wall Cloud, Damage), each opening a detail modal, with a legend and a fullscreen toggle. Sidebar controls: Year, report-type filter, map-height slider.
+  - **Tornado List** — chronological list of every tornado logged, linked back to its chase.
+  - **Chase Stats** — aggregated chase statistics for all time or a specific year, in up to four independently-toggleable sections (**Overall**, **Convective**, **Hurricane**, **Winter**) so a block instance can show just one type's numbers in isolation. Overall: Chase Days, Miles Driven, Average Miles per Chase Day, Longest Chase, States, Spotter Network Reports, "New States This Season," consecutive-year chase streak, Windshields Replaced, and (all-time only) Top Chase Partners/Most Encountered Chasers. Convective: Tornado Days, Tornadoes, Photogenic Tornadoes, Largest Hail, Highest Wind, Average Miles per Tornado, Tornado Day %, Tornadoes per Mile, EF Rating Breakdown, Storm Modes breakdown, first/last tornado of the season, **Busts**, **Blue Sky Busts**, **Kiss of Death Days** (each with an info tooltip), and Best Chase Day. Hurricane/Winter cover landfalls/snowfall respectively, plus first/last of the season and Best Chase Day. An optional sortable "Biggest Chase Days" table too. What a brand-new block starts with is configurable in Settings (see Chase Stats Block Defaults).
+  - **Chase Archive** — list of past storm chases, with a Year dropdown populated from the years that actually have chases logged (instead of free text), a "Number of chases to show" field, and an optional icon toggle showing tornado/hail/wind stat badges per entry. Picking a year that hasn't happened yet shows a clear "hasn't happened yet" message instead of an empty list. Hurricane chases are labeled by storm name instead of just a date.
+  - **Current Location** — block-only, no shortcode ever existed for this one. Embeds the live chaser-location tracker (`/files/location.html`) as a configurable iframe (URL, height), replacing what used to be a hand-placed raw HTML block.
+- **Map Providers**: Choose between **OpenStreetMap** (Leaflet.js, self-hosted, no API key required) or **Google Maps** (API key required) in plugin settings.
+- **GPS Track Playback**: Chase maps built from a GPS track include a start → end scrubber that redraws the route up to a point in time and shows the current percentage through the track, plus Play/Pause and speed controls. The map is displayed after the chase recap summary, just above the full write-up.
+- **Historical Radar Overlay**: A "Show radar" toggle on tracks with timestamps overlays historical NEXRAD composite reflectivity, cropped to cover whatever's actually visible on screen by default (not just a box tightly hugging the track itself — a long, narrow track no longer shows radar as a thin strip bordered by bare map).
 - **GPS Track Privacy Zones**: Configure named locations with a radius in plugin settings; points falling inside a zone are stripped from the start and end of any uploaded GPS track (e.g., your home or staging area) while points in the middle of the track are always kept.
-- **Best Chase of the Season**: Mark one chase per year as the best/favorite. Displays as *Best Chase Day: May 24* with a link in the `[scstats]` output.
-- **Windshield Replacements**: Track hail-damage windshield replacements by month/year directly in the settings page. Displays in `[scstats]` as *Windshields Replaced: N*.
-- **Spotter Network Import**: Improved CSV upload UI with drag-and-drop, dry-run preview mode, and clear progress feedback. Reports are automatically matched to chase logs by date.
+- **Bust / Blue Sky Bust / Kiss of Death Tracking**: Counted from the `bust`, `blue sky bust`, and `kissofdeath` WordPress tags already used to mark chase recaps — no separate editor field, just keep tagging chases the way you already do and the Chase Stats block picks it up.
+- **Best Chase of the Season**: Mark one chase per year as the best/favorite. Displays as *Best Chase Day: May 24* with a link in the Chase Stats block.
+- **Windshield Replacements**: Track hail-damage windshield replacements by month/year directly in the settings page. Displays in the Chase Stats block as *Windshields Replaced: N*.
+- **Legacy Meta Row Cleanup**: A Settings-page tool to find and remove stray individual postmeta rows left behind by an old save path, with a dry-run report before anything is deleted.
+- **Spotter Network Import**: Drag-and-drop CSV upload UI with dry-run preview mode and clear progress feedback. Reports are automatically matched to chase logs by date. (No credential-based auto-fetch — this plugin never stores a Spotter Network password; CSV export/upload is the only import path.)
+- **Chase Stats Block Defaults**: A Settings-page section controlling what a brand-new Chase Stats block starts with when added to a page — a block already placed somewhere is unaffected.
 - **Dynamic Tornado Entries**: Add, remove, and reorder (drag or up/down arrows) tornado entries in the admin interface, with fields for coordinates, EF rating, media uploads, and photogenic flag. Entries collapse to a one-line summary when not being edited, expanding on click. Display order on the public chase page matches the order set in the editor (top entry first).
 - **Customizable Settings**: Enable/disable individual features, choose map provider, set file size limits, and configure supported MIME types.
 - **Responsive Design**: Styled for modern themes, optimized for mobile and desktop.
 - **REST API Support**: Full Gutenberg/block editor compatibility for meta data and file uploads.
-- **Transient Caching**: `[scarchive]` and `[scstats]` are cached with automatic invalidation on post save.
+- **Transient Caching**: Every block's output is cached with automatic invalidation on post save.
 - **Error Handling & Logging**: Debug logging via `WP_DEBUG_LOG`.
 - **State/Province Display**: Converts state codes to full names with a Canadian flag icon for provinces.
 - **Time Zone Conversion**: Spotter Network report timestamps displayed in Central Time.
@@ -53,8 +56,8 @@ A WordPress plugin designed for storm chasers by a storm chaser to create and ma
 ## Installation
 
 1. **Download the Plugin**:
-   - Clone: `git clone https://github.com/bholcomb14/stormchases.git`
-   - Or download the ZIP from the [GitHub repository](https://github.com/bholcomb14/stormchases).
+   - Grab the latest tagged version's ZIP from the [Releases page](https://github.com/bholcomb14/stormchases/releases) — this is the recommended way to get a stable, versioned copy.
+   - Or clone the repo directly: `git clone https://github.com/bholcomb14/stormchases.git` (this tracks the latest commit, not necessarily a tagged release).
 
 2. **Install**:
    - Upload the `stormchases` folder to `/wp-content/plugins/`.
@@ -68,85 +71,30 @@ A WordPress plugin designed for storm chasers by a storm chaser to create and ma
 ## Usage
 
 ### Creating a Storm Chase
-1. Navigate to **Storm Chases > Add New**.
-2. Set the **Publish Date** to the chase date — the post slug and internal chase date field are set automatically.
-3. Fill in the meta box fields (states, partners, miles, hail, wind, etc.).
-4. Optionally mark **Best Chase of the Season** if the feature is enabled.
-5. Add tornado entries and/or upload a chase map as needed.
-6. Publish. The chase is accessible at `/chases/YYYYMMDD/`.
-
-### Shortcodes
-
-#### `[scarchive]`
-Lists published storm chases ordered by date descending.
-
-| Attribute | Description | Example |
-|---|---|---|
-| `show` | Max number of chases to display | `show=20` |
-| `year` | Filter to a specific year | `year=2025` |
-| `chasers` | Filter by chasers encountered | `chasers=Smith` |
-| `states` | Filter by state code | `states=TX` |
-| `tornadoes` | Show only tornado days | `tornadoes=yes` |
-
-**Examples:**
-```
-[scarchive show=14]
-[scarchive year=2025]
-[scarchive show=10 year=2023 tornadoes=yes]
-```
-
-#### `[scstats]`
-Displays aggregated statistics. Optionally filter to a specific year.
-
-| Attribute | Description | Example |
-|---|---|---|
-| `year` | Filter stats to this year | `year=2025` |
-| `tornadoes` | Show tornado list instead of stats | `tornadoes=true` |
-
-**Examples:**
-```
-[scstats]
-[scstats year=2025]
-[scstats tornadoes=true year=2024]
-```
-
-Outputs (when enabled): Chase Days, Tornado Days, Tornadoes, Photogenic Tornadoes, Miles Driven, States, Spotter Network Reports, Largest Hail, Highest Wind, Tornado Day Percentage, Tornadoes per Mile, **Best Chase Day**, **Windshields Replaced**.
-
-#### `[sc_tornado_map]`
-Interactive map with a marker for every tornado logged, colored by EF rating, each opening a detail modal. Includes a fullscreen toggle and an EF-rating legend.
-
-| Attribute | Description | Example |
-|---|---|---|
-| `year` | Filter to a specific year | `year=2025` |
-| `ratings` | Comma-separated EF ratings to show (default: all) | `ratings=EF-4,EF-5` |
-
-```
-[sc_tornado_map]
-[sc_tornado_map year=2011]
-[sc_tornado_map ratings=EF-4,EF-5]
-```
-
-#### `[sc_reports]`
-Interactive map + sorted list of all Spotter Network reports, colored/shaped by report type, each opening a detail modal showing time, location, narrative, and reported weather. Includes a fullscreen toggle and a report-type legend.
-
-| Attribute | Description | Example |
-|---|---|---|
-| `year` | Filter to a specific year | `year=2024` |
-| `types` | Comma-separated report types to show — `tornado`, `hail`, `wind`, `funnel`, `wallcloud`, `damage`, `generic` (default: all) | `types=tornado,hail` |
-
-```
-[sc_reports]
-[sc_reports year=2024]
-[sc_reports types=tornado,hail]
-```
+1. Navigate to **Storm Chases > Add New** — this opens the guided wizard, not the raw editor.
+2. **Step 1 (required)**: Chase Date, Chase Type, States Chased, Chase Partners (type "Solo" or names), and Miles Logged (0 counts as answered). This creates the chase as a draft and sets its publish date/slug automatically.
+3. **Step 2 (optional)**: weather details for the Chase Type you picked — tornadoes, wind, hail, storm mode, or landfalls/snowfall — plus milestones. Skip it if you don't have this yet.
+4. **Step 3 (optional)**: upload a chase map (GPS track or image). Skip it too, if you'd rather add it later.
+5. Click **Finish** to land on the normal edit screen for that chase (add photos, mark Best Chase of the Season, etc., then Publish when ready), or **Add Another Chase** to immediately start logging the next one — useful for getting a backlog of chases on the books in one sitting.
+6. Once published, the chase is accessible at `/chases/YYYYMMDD/`.
 
 ### Blocks
 
-Gutenberg block equivalents of the map/list/stats shortcodes above — insert via the block editor and search
-"Tornado Map", "Spotter Reports", "Tornado List", or "Chase Stats" (grouped under a **Storm Chases** category
-in the inserter). Settings that are shortcode attributes above become sidebar controls instead: a Year field,
-editable/hideable heading text on all four, and on the two map blocks, a height slider and a checkbox filter
-(EF rating or report type). Requires WordPress 6.1+.
+Insert via the block editor and search for the block by name (all grouped under a **Storm Chases** category
+in the inserter): **Tornado Map**, **Spotter Reports**, **Tornado List**, **Chase Stats**, **Chase Archive**,
+or **Current Location**. Requires WordPress 6.1+.
+
+- **Tornado Map**: Year, EF-rating filter, memorable-storm/hurricane/snowfall overlay toggles, legend
+  show/hide, visitor-facing layer-toggle checkboxes, fixed zoom/center override, map-height slider,
+  heading text.
+- **Spotter Reports**: Year, report-type filter, map-height slider, heading text.
+- **Tornado List**: Year, heading text.
+- **Chase Stats**: Year, heading text, section toggles (Overall/Convective/Hurricane/Winter), Longest
+  Chase, EF Rating Breakdown, Storm Modes, first/last tornado & landfall of the season, "new states"
+  callout, consecutive-year streak, sortable "Biggest Chase Days" table (+ count), Top Chase Partners /
+  Most Encountered Chasers (+ count, all-time only).
+- **Chase Archive**: Year (a dropdown of years that actually have chases logged), number of chases to show, four independent stat-icon toggles (tornado/hail/wind/Spotter Network report count, each off by default), heading text.
+- **Current Location**: Embed URL (defaults to `/files/location.html`), height.
 
 ### Importing Spotter Network Reports
 1. Go to **Storm Chases > Settings → Import Spotter Network Reports**.
@@ -162,14 +110,38 @@ Required CSV columns: `report`, `report_type`, `stamp`, `lat`, `lon`, `narrative
 2. Click **Add Entry** with the month and year of each replacement.
 3. Multiple entries in the same month are allowed.
 4. Delete entries with the **Delete** button.
-5. Enable **Enable Windshields Replaced** in the main settings to show the count in `[scstats]`.
+5. Enable **Enable Windshields Replaced** in the main settings to show the count in the Chase Stats block.
 
 ### Marking Best Chase of the Season
 1. Enable **Enable Best Chase of Season** in settings.
 2. Open any storm chase in the editor.
 3. Check **Best Chase of the Season** in the meta box.
 4. Saving the post updates the best-chase record for that season. Only one chase per year can be marked — checking a new one automatically replaces the previous selection.
-5. The best chase day appears in `[scstats year=YYYY]` output as a linked date.
+5. The best chase day appears in the Chase Stats block (filtered to that year) as a linked date.
+
+### Chase People Profiles
+1. Just type names into the Chase Partners and/or Chasers Encountered fields as usual — Chase Partners and
+   Chasers Encountered draw from one shared list of people, not two separate ones, and saving the chase
+   automatically keeps that list up to date. No separate tagging step needed.
+2. Manage the full list of people (and give any of them an optional **Website** and **Location**) under
+   **Chase People** in the admin menu.
+3. On the public chase page, each named person links to a popup showing every other chase logged with
+   them, plus their website/location if set. Someone who's both a Chase Partner on some chases and a
+   Chaser Encountered on others is one person here, not two — their popup lists every chase they're on,
+   labeled with which role they were in each time.
+4. Already had chases logged before this existed? Go to **Storm Chases > Settings → Chase People
+   Profiles**, click **Scan Chase Logs for Names** to preview every name it would turn into a profile,
+   then **Migrate N Name(s)** to apply — the original text fields are never modified, so this is safe to
+   run (or re-run) at any time. Confirmed spelling variants of the same person (or a nickname that should
+   map to their real name) can be listed under **Name Corrections** on the same Settings page — "As Typed
+   => Correct Spelling," one per line.
+
+### Legacy Meta Row Cleanup
+1. Go to **Storm Chases > Settings → Legacy Meta Row Cleanup**.
+2. Click **Scan for Legacy Meta Rows** — reports any stray individual postmeta row found on a chase, and
+   whether its value matches that chase's real data (safe to delete) or not (needs manual review).
+3. If any are reported safe, click **Delete Safe Row(s)** to remove them. Rows that don't match are never
+   auto-deleted.
 
 ## Settings Reference
 
@@ -183,8 +155,10 @@ Required CSV columns: `report`, `report_type`, `stamp`, `lat`, `lon`, `narrative
 | Enable Wind | Display wind data |
 | Enable Hail | Display hail data |
 | Enable Milestones | Display milestones field |
-| **Enable Best Chase of Season** | Show best-chase checkbox in editor and stat in `[scstats]` |
-| **Enable Windshields Replaced** | Show windshield count in `[scstats]` |
+| **Enable Best Chase of Season** | Show best-chase checkbox in editor and stat in the Chase Stats block |
+| **Enable Windshields Replaced** | Show windshield count in the Chase Stats block |
+| **Enable Busts / Blue Sky Busts** | Show Busts and Blue Sky Busts counts in the Chase Stats block, from the `bust`/`blue sky bust` tags |
+| **Enable Kiss of Death Days** | Show Kiss of Death Days count in the Chase Stats block, from the `kissofdeath` tag |
 | Enable Maps | Enable map rendering on individual chase pages |
 | Enable Spotter Network Reports | Display report count and modals on chase pages |
 | **Map Provider** | `OpenStreetMap` (default, no key needed) or `Google Maps` |
@@ -192,6 +166,9 @@ Required CSV columns: `report`, `report_type`, `stamp`, `lat`, `lon`, `narrative
 | Maximum File Size | Chase map upload limit (1MB–100MB); GPS track files bypass this limit and are governed by PHP's `upload_max_filesize` |
 | Supported File Types | MIME types for chase map image uploads (GPS tracks are always accepted regardless of this list) |
 | **GPS Track Privacy Zones** | Named locations with a radius (miles); track points within a zone are stripped from the start/end of uploaded GPS tracks |
+| **Legacy Meta Row Cleanup** | Scan for and remove stray individual postmeta rows left behind by an old save path |
+| **Chase Stats Block Defaults** | What a brand-new Chase Stats block starts with (section toggles, "Biggest Chase Days", Top Chase Partners/Chasers, and their counts) — doesn't affect a block already placed on a page |
+| **Name Corrections** | "As Typed => Correct Spelling" pairs for the Chase People profiles — one per line |
 
 ## Requirements
 
@@ -202,69 +179,59 @@ Required CSV columns: `report`, `report_type`, `stamp`, `lat`, `lon`, `narrative
 
 ## Built With
 
-- **PHP**: Plugin logic, custom post type, REST API, shortcodes, data sanitization.
+- **PHP**: Plugin logic, custom post type, REST API, Gutenberg block rendering, data sanitization.
 - **JavaScript**: jQuery for admin UI; Leaflet.js or Google Maps JS API for interactive maps.
 - **CSS**: Custom admin and front-end styles.
-- **WordPress APIs**: Custom post type, REST API, shortcodes, transients.
-- **Leaflet.js** (OpenStreetMap mode): v1.9.4, loaded from CDN.
+- **WordPress APIs**: Custom post type, REST API, block editor, transients.
+- **Leaflet.js**: v1.9.4, self-hosted (`assets/vendor/leaflet/`) rather than loaded from a CDN.
 
 ## Changelog
 
+Full details for every release live in [CHANGELOG.md](CHANGELOG.md). Summary:
+
+### 2.0.0
+- **Guided "Add New Storm Chase" wizard** — required basics first, then optional weather details and a
+  chase map upload, before landing on the normal edit screen. "Add Another Chase" for logging several in
+  one sitting.
+- **Chase Type** (Convective/Hurricane/Winter/Other) with hurricane landfalls, Winter snowfall reports,
+  Convective storm mode (including LP/Classic/HP/Hybrid supercell subtypes), and per-type Best Chase of
+  the Season.
+- **Chase Stats** restructured into toggleable Overall/Convective/Hurricane/Winter sections (with
+  Settings-page control over what a brand-new block starts with), plus a new sortable "Biggest Chase
+  Days" table, EF rating breakdown, storm mode breakdown, and several new stats (Longest Chase,
+  first/last tornado/landfall of the season, new-state callout, consecutive-year chase streak).
+- **Chase People Profiles** — Chase Partners and Chasers Encountered draw from one shared list of real,
+  reusable people (each with an optional website and location, and a combined "other chases" popup for
+  someone who's been both a partner and an encountered chaser) instead of just free text — kept
+  automatically up to date on every save, with a migration tool to backfill existing chase logs.
+- Chase Archive per-icon toggles, hurricane naming, and all shortcodes removed in favor of their block
+  equivalents. (Spotter Network import stays CSV-only — an auto-fetch feature was tried and removed rather
+  than store a real account password for uncertain benefit.)
+
 ### 1.9.2
-- **Added**: Play/Pause and speed (+/-, 0.25x-8x) controls above the GPS track scrubber, animating the track (and radar, if shown) automatically instead of requiring manual dragging. Dragging the scrubber by hand stops playback. Pressing Play first buffers a short run of upcoming radar frames (shown as "Buffering radar… N/M" next to the controls) so a fast connection can play back smoothly instead of visibly lagging behind; playback also keeps one frame prefetching in the background while it plays, and will pause and re-buffer automatically if a slow connection falls behind rather than showing a stale frame. None of this downloads anything until Play is actually pressed.
-- **Changed**: The "Show radar" toggle is now checked by default on tracks that support it. Radar frames are still only ever fetched one at a time as the scrubber/playback actually reaches them (never preloaded), so this only costs a single frame's download on page load, not the whole track's worth.
+- Play/Pause and speed controls for GPS track playback, with automatic radar-frame buffering.
+- Radar overlay now on by default for tracks that support it.
 
 ### 1.9.1
-- **Fixed**: The historical radar overlay could show a storm 90-100 miles north of its true position, despite the underlying track/timestamp/imagery data all being correct. At a chase page's typical zoom level, Leaflet/Google Maps has to CSS-scale the full continental NEXRAD composite image (12,200x5,400px) up to render sizes exceeding 11,000x6,000px on screen — past the GPU's maximum texture size on some browser/driver combinations, which silently mis-composited the overflow instead of erroring, so the storm appeared shifted even though the browser's own DOM position and pixel data were both correct. The radar image is now cropped client-side (via canvas) down to just the chase track's bounding box, plus padding, *before* it's ever handed to the map as an overlay, so the on-screen render size stays small regardless of zoom and the GPU never approaches that limit.
-- **Fixed**: Dragging the GPS track scrubber fires a burst of radar-frame image requests in quick succession, and nothing prevented a slow-to-load *earlier* frame from finishing after a faster *later* one and overwriting it — the on-screen overlay would end up showing an older frame's storm position while the "Radar: HH:MM UTC" label had already moved on to the correct, current time. Each radar frame request now carries a sequence number; only the most recently *issued* request is allowed to actually paint the overlay, regardless of which order the network responses arrive in.
-- **Changed**: Each radar frame is now cached in memory (as a small cropped image) after its first load, so scrubbing back over a time you've already viewed redraws it instantly with no re-download. Fetching a new frame is also debounced by ~150ms, so dragging quickly across many frames only fetches the one you actually stop on instead of a discarded request for every frame crossed along the way.
-- **Fixed**: On chases from before roughly late 2014, the radar overlay could show a storm shifted well east of its true position (e.g., the May 20, 2013 Moore, OK EF-5 showed clear over the actual tornado track with the storm displaced to the east) — IEM's `n0q` composite grid isn't fixed across history; it grew from 12,000x5,200px to 12,200x5,400px sometime between January and December 2014, and the overlay was computing each frame's geographic position from today's grid size regardless of the frame's actual date. Each radar frame's real bounds are now read from its own accompanying `.wld` world file instead of assumed, so this can't drift again even if IEM changes the grid a third time.
+- Fixed three separate radar-overlay position bugs (GPU texture-size overflow, a stale-frame race
+  condition, and a pre-2014 historical grid-size mismatch).
+- Radar frames now cached in memory and debounced for smoother scrubbing.
 
 ### 1.9.0
-- **Fixed**: A leading-zero bug in NMEA timestamp parsing (`nmea_timestamp()`) could cause `DateTime::createFromFormat()` to silently fail for any GPS fix recorded on a `:00`–`:09` second (~1 in 6 points). Those points lost their timestamp and were sorted to the end of the track out of chronological order, causing multi-file GPS track merges to visually "retrace" earlier parts of the route instead of drawing one clean, continuous line.
-- **Fixed**: "Remove Chase Map" now calls a REST endpoint instead of submitting the post-edit form, so it no longer triggers the browser's "leave site?" unsaved-changes prompt and reliably removes the map in place.
-- **Fixed**: A critical error on the Settings page ("Supported File Types") caused by reading a saved array-type option through `wp_load_alloptions()`, which returns raw serialized values instead of the unserialized array `get_option()` provides.
-- **Fixed**: The Google Maps API key validation request fired twice on every settings save due to a duplicated hook registration.
-- **Removed**: Dead front-end enqueue code that could never run (an `is_admin()` branch inside a `wp_enqueue_scripts` callback, which never fires in `wp-admin`) — the real admin script/style enqueue already lives in `Storm_Chases::enqueue_admin_scripts()`.
-- **Removed**: `templates/storm_chase_template.php`, an orphaned single-post template left over from before the plugin switched to rendering chase details via the `the_content` filter (June 2025). Nothing in the plugin had loaded it since; single chase pages have always been rendered by `StormChaseTemplate::display_storm_chase_data()`.
-- **Changed**: The GPS track scrubber now shows only a percentage-through-track indicator (e.g., `37%`); latitude/longitude are no longer displayed.
-- **Changed**: On individual chase pages, the chase map now renders after the recap summary and the Severe Risk/Reports links, directly above the full write-up, instead of at the top of the page.
-- **Added**: Tornado entries in the chase editor can now be reordered — drag by the handle or use the up/down arrows — with the top entry always shown first on the public chase page. Previously-saved entries load collapsed to a one-line summary (name + EF rating); click an entry to expand it for editing, and click **Done** (or the entry again) to collapse it back. New entries added via **Add Tornado** start expanded for data entry. Also fixes a latent bug where removing a tornado from the middle of the list, then adding a new one, could silently overwrite an existing entry due to reused/duplicate array indices.
-- **Changed**: Chase Milestones is now a bullet-point list instead of a single free-text field — press Enter or click **+ Add Milestone** to add another bullet. Existing milestone text (previously a single string, and previously silently flattened to one line on every save since newlines were being stripped) is migrated automatically into a one-item list the next time the chase loads; split it into more bullets as needed.
-- **Fixed**: The Publish date, the URL slug, and the Chase Date field could drift out of sync in edge cases because they were derived by two separate, slightly different code paths. Both now go through one shared, validated derivation function, and the block editor's Chase Date field updates live as you change the Publish date (no more waiting for a save to see it reflected). If WordPress ever can't set the slug to match (e.g., another chase already uses that date), you'll now see an admin notice explaining why — previously that error was captured but never actually shown anywhere.
-- **Fixed**: A GPS receiver losing satellite lock can report one wildly wrong fix, or get stuck repeating the same stale fix for the rest of a recording — both were previously drawn straight into the track as a long spurious line. Any point that implies a jump of more than 10 miles from the last accepted point in its segment is now discarded before the track is stored, and the upload result reports how many points were dropped this way.
-- **Hardened**: Chase pages now re-simplify (cap) an unexpectedly large stored GPS track before embedding it in the page, in case any chase was saved by a much older version of the plugin before `simplify_track()`'s point cap existed.
-- **Changed**: On a fresh install, Miles Logged, States Chased, Tornadoes, Wind, Hail, Milestones, and Spotter Network Reports are now enabled by default (previously all feature toggles defaulted to off). Map Provider continues to default to OpenStreetMap. Also fixed the Settings page checkboxes themselves, which were reading raw option data with a hardcoded "unchecked" fallback and so would have displayed as off even once the real default was on.
-- **Removed**: The tornado "Media URL" video-embed field, which never actually worked — the value was captured on save but silently dropped before storage by the sanitizer's field whitelist, so the video player it was meant to feed could never fire.
-- **Added**: A **📍 Pick Location on Map** button next to a tornado's Latitude/Longitude and End Latitude/End Longitude fields, opening a click-to-place map (OpenStreetMap via Leaflet) that fills in the coordinates (rounded to 4 decimal places) instead of requiring them to be typed by hand.
-- **Added**: A **Show radar** toggle on the GPS track scrubber overlays historical NEXRAD composite reflectivity (via the Iowa Environmental Mesonet archive) synced to wherever the scrubber is positioned, updating automatically as you drag it. Fetched directly in the browser at the archive's native 5-minute cadence — no server-side processing or storage involved. To keep precise time-of-day from being exposed on the public chase page, only a sparse checkpoint (roughly every 10 minutes, rounded to the nearest 5) is stored per track segment rather than a timestamp on every point; the gaps are estimated in the browser from point position, just to pick a radar frame, and that estimate is never saved. Only available for tracks that include at least one timestamp checkpoint; **GPS tracks must be re-uploaded to gain this** (timestamps weren't previously kept in storage at all — only latitude/longitude survived past the merge step). New uploads get it automatically.
-- **Fixed**: `[sc_tornado_map]` always rendered "No location data available for this map" — its `WP_Query` filtered on a `chasetornado` post-meta key that doesn't actually exist as a standalone row (tornado data lives only inside the serialized `chase_data` blob), so the query silently matched zero posts. It now queries all published chases and filters in PHP.
-- **Added**: `[sc_tornado_map]` markers are now colored by EF rating (purple EF-5 down to aqua EF-0, gray for unrated) instead of Leaflet's default blue pin, using a set of hand-generated icons; higher-rated tornadoes always draw on top of lower-rated ones when markers overlap at low zoom. A matching legend renders under the map. Works on both the OpenStreetMap and Google Maps providers.
-- **Added**: A fullscreen toggle on both `[sc_tornado_map]` and `[sc_reports]`.
-- **Fixed**: Map marker popups (on `[sc_tornado_map]`/`[sc_reports]`) couldn't be closed at all when opened from a map click, since the close-button/backdrop handlers were only ever bound on pages that also had certain unrelated link elements. Popups now always open positioned next to the clicked marker instead of centered on screen, and close on any click inside them (the X, the backdrop, or the content itself).
-- **Changed**: Marker hover labels (tornado/report name) are bigger and bolder.
-- **Added**: `[sc_reports]` markers are now colored/shaped by report type (Tornado, Hail, Wind, Funnel Cloud, Wall Cloud, Damage, or a generic fallback) instead of a plain default pin, with a matching legend. The report-type label itself (previously three slightly-drifted copies of the same derivation logic scattered across the codebase) is now computed in one shared place.
-- **Added**: Gutenberg block equivalents of `[sc_tornado_map]`, `[sc_reports]`, and `[scstats]` (both its stats and tornado-list modes) — **Tornado Map**, **Spotter Reports**, **Tornado List**, and **Chase Stats** blocks, each with block-sidebar controls (year, heading text, show/hide heading) instead of shortcode attributes; the two map blocks additionally get a map-height slider, and a checkbox filter to show only chosen EF ratings or report types. Purely additive — shortcodes are unchanged and remain fully supported. **Raises the minimum WordPress version to 6.1** (from 5.0) for the blocks' server-side rendering support.
+- Tornado entries became reorderable/collapsible; GPS tracks gained outlier rejection and a historical
+  radar overlay.
+- Chase Date/slug/publish-date derivation unified into one source of truth; several bug fixes (a Settings
+  page crash, an NMEA timestamp parsing bug, a duplicated hook).
+- Tornado Map and Spotter Reports gained EF/type-colored icons, legends, and fullscreen; first Gutenberg
+  blocks added (raised the WordPress minimum to 6.1).
 
 ### 1.8.0
-- **Added**: `[sc_tornado_map]` shortcode — interactive OpenStreetMap/Google Maps map of all tornadoes with modal popups. One modal open at a time; clicking another closes the current one.
-- **Added**: `[sc_reports]` shortcode — interactive map + full list of all Spotter Network reports with modal popups.
-- **Added**: **Map Provider** setting — choose between OpenStreetMap (Leaflet.js, no API key) or Google Maps.
-- **Added**: **Best Chase of the Season** feature — checkbox in the chase editor, displayed as *Best Chase Day: [date]* in `[scstats year=YYYY]`.
-- **Added**: **Windshield Replacements** management in plugin settings — track hail-damage windshield replacements by month/year; count displayed in `[scstats]`.
-- **Improved**: Spotter Network CSV upload — drag-and-drop file zone, file size/name preview, **dry-run (preview) mode**, inline loading spinner, cleaner skip-reason reporting.
-- **Improved**: Modals on all pages close when another is opened (one-at-a-time behavior).
-- **Improved**: `stormChasesFrontend.mapProvider` passed to frontend JS for correct map initialization.
-- **Fixed**: Admin `sanitize_callback` routing now handles `map_provider` correctly without falling back to `intval`.
+- Interactive Tornado Map and Spotter Reports map/list added.
+- Best Chase of the Season and Windshield Replacements tracking added.
+- Spotter Network CSV upload UX improved (drag-and-drop, dry-run preview).
 
 ### 1.7.0
-- Added `[scstats]` shortcode for aggregated chase statistics.
-- Added Spotter Network Reports CSV upload with validation, date matching, and overwrite option.
-- Added dynamic tornado entry management with media uploads.
-- Added state/province code conversion with Canadian flag.
-- Added UTC → Central Time conversion for report timestamps.
-- Improved Google Maps integration.
-- Improved REST API endpoints for chasemap and spotter report uploads.
+- Initial aggregated chase statistics, Spotter Network CSV upload, and dynamic tornado entry management.
 
 ## Author
 
@@ -277,5 +244,3 @@ Required CSV columns: `report`, `report_type`, `stamp`, `lat`, `lon`, `narrative
 ## Contributing
 
 Issues and pull requests welcome at the [GitHub repository](https://github.com/bholcomb14/stormchases). Please follow WordPress coding standards.
-
-

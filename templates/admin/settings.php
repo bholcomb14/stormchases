@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
 }
 
 if (!current_user_can('manage_options')) {
-    wp_die(__('You do not have sufficient permissions to access this page.', 'stormchases'));
+    wp_die(esc_html__('You do not have sufficient permissions to access this page.', 'stormchases'));
 }
 
 $windshields   = get_option('storm_chases_windshields', []);
@@ -38,6 +38,8 @@ $months = [
                 'milestones_enable'          => __('Enable Milestones', 'stormchases'),
                 'best_chase_enable'          => __('Enable Best Chase of Season', 'stormchases'),
                 'windshields_enable'         => __('Enable Windshields Replaced', 'stormchases'),
+                'busts_enable'               => __('Enable Busts / Blue Sky Busts', 'stormchases'),
+                'kiss_of_death_enable'       => __('Enable Kiss of Death Days', 'stormchases'),
                 'google_maps_enable'         => __('Enable Maps', 'stormchases'),
                 'spotter_reports_enable'     => __('Enable Spotter Network Reports', 'stormchases'),
             ];
@@ -113,6 +115,7 @@ $months = [
                 </td>
             </tr>
 
+
             <tr>
                 <th scope="row">
                     <label for="storm_chases_max_file_size">
@@ -155,6 +158,59 @@ $months = [
                         <?php esc_html_e('Comma-separated MIME types for chase map uploads (e.g., image/jpeg,image/png).', 'stormchases'); ?>
                     </p>
                 </td>
+            </tr>
+        </table>
+
+        <h2><?php esc_html_e('Chase Stats Block Defaults', 'stormchases'); ?></h2>
+        <p class="description">
+            <?php esc_html_e('What a brand new Chase Stats block starts with when added to a page. A block already placed somewhere keeps whatever it was set to — this only applies going forward.', 'stormchases'); ?>
+        </p>
+        <table class="form-table" role="presentation">
+            <?php
+            $stats_default_fields = [
+                'stats_default_show_heading'        => __('Show heading', 'stormchases'),
+                'stats_default_show_overall'         => __('Show overall stats (chase days, miles, states…)', 'stormchases'),
+                'stats_default_show_convective'      => __('Show Convective section', 'stormchases'),
+                'stats_default_show_hurricane'       => __('Show Hurricane section', 'stormchases'),
+                'stats_default_show_winter'          => __('Show Winter section', 'stormchases'),
+                'stats_default_show_longest_chase'   => __('Show longest chase (in overall stats)', 'stormchases'),
+                'stats_default_show_ef_breakdown'    => __('Show EF rating breakdown (in Convective)', 'stormchases'),
+                'stats_default_show_storm_modes'     => __('Show storm mode breakdown (in Convective)', 'stormchases'),
+                'stats_default_show_top_days'        => __('Show "Biggest Chase Days" sortable table', 'stormchases'),
+                'stats_default_show_first_last'      => __('Show first/last tornado & landfall of the season', 'stormchases'),
+                'stats_default_show_new_states'      => __('Show "new states this season" callout', 'stormchases'),
+                'stats_default_show_streak'          => __('Show consecutive-year chase streak', 'stormchases'),
+                'stats_default_show_top_people'      => __('Show Top Chase Partners / Most Encountered Chasers (all-time only)', 'stormchases'),
+            ];
+            ?>
+            <?php foreach ($stats_default_fields as $field => $label) : ?>
+                <tr>
+                    <th scope="row">
+                        <label for="<?php echo esc_attr($field); ?>"><?php echo esc_html($label); ?></label>
+                    </th>
+                    <td>
+                        <input
+                            type="checkbox"
+                            class="storm-chases-toggle"
+                            id="<?php echo esc_attr($field); ?>"
+                            name="<?php echo esc_attr($field); ?>"
+                            value="1"
+                            <?php checked(1, (int) get_option($field)); ?>
+                            aria-describedby="<?php echo esc_attr($field); ?>-description"
+                        />
+                        <span id="<?php echo esc_attr($field); ?>-description" class="screen-reader-text">
+                            <?php echo esc_html($label); ?>
+                        </span>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            <tr>
+                <th scope="row"><label for="stats_default_top_days_count"><?php esc_html_e('Biggest Chase Days: number of rows', 'stormchases'); ?></label></th>
+                <td><input type="number" id="stats_default_top_days_count" name="stats_default_top_days_count" value="<?php echo esc_attr($options['stats_default_top_days_count'] ?? 10); ?>" min="1" max="50" class="small-text"></td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="stats_default_top_people_count"><?php esc_html_e('Top Chase Partners / Chasers: number of people', 'stormchases'); ?></label></th>
+                <td><input type="number" id="stats_default_top_people_count" name="stats_default_top_people_count" value="<?php echo esc_attr($options['stats_default_top_people_count'] ?? 10); ?>" min="1" max="50" class="small-text"></td>
             </tr>
         </table>
 
@@ -305,7 +361,7 @@ $months = [
         <tr>
             <th scope="row"><label for="sc-ws-year"><?php esc_html_e('Year', 'stormchases'); ?></label></th>
             <td>
-                <input type="number" id="sc-ws-year" value="<?php echo esc_attr(date('Y')); ?>" min="1990" max="<?php echo esc_attr((int) date('Y') + 1); ?>" class="small-text">
+                <input type="number" id="sc-ws-year" value="<?php echo esc_attr(current_time('Y')); ?>" min="1990" max="<?php echo esc_attr((int) current_time('Y') + 1); ?>" class="small-text">
             </td>
         </tr>
     </table>
@@ -387,4 +443,169 @@ $months = [
         </button>
     </p>
     <div id="sc-privacy-message" aria-live="polite"></div>
+
+    <h2><?php esc_html_e('Chase People Profiles', 'stormchases'); ?></h2>
+    <p class="description">
+        <?php esc_html_e('Names typed into Chase Partners or Chasers Encountered are automatically kept as real, reusable people (each with an optional website and location, and a popup showing every other chase they\'re logged on — labeled with which role they were in each time) — no separate step needed for a chase saved from here on. Manage the list of people directly under the "Chase People" menu item, or backfill any chase logs saved before this existed with the tool below.', 'stormchases'); ?>
+    </p>
+    <?php
+    $sn_person_result = get_transient('storm_chases_person_migration_result_' . get_current_user_id());
+    if (isset($_GET['sc_person_migrated']) && is_array($sn_person_result)) {
+        delete_transient('storm_chases_person_migration_result_' . get_current_user_id());
+        printf(
+            '<div class="notice %1$s inline"><p>%2$s</p></div>',
+            $sn_person_result['success'] ? 'notice-success' : 'notice-error',
+            esc_html($sn_person_result['message'])
+        );
+    }
+
+    $person_report = get_transient('storm_chases_person_migration_report_' . get_current_user_id());
+    if (isset($_GET['sc_person_scan']) && is_array($person_report)) {
+        $total_names = count($person_report);
+        if ($total_names === 0) {
+            echo '<p>' . esc_html__('No names found in the legacy text fields — nothing to migrate.', 'stormchases') . '</p>';
+        } else {
+            ?>
+            <table class="widefat striped" style="max-width:700px;">
+                <thead><tr>
+                    <th><?php esc_html_e('Name (as it would become a term)', 'stormchases'); ?></th>
+                    <th><?php esc_html_e('Chases', 'stormchases'); ?></th>
+                    <th><?php esc_html_e('As Chase Partner', 'stormchases'); ?></th>
+                    <th><?php esc_html_e('As Chaser Encountered', 'stormchases'); ?></th>
+                </tr></thead>
+                <tbody>
+                    <?php foreach ($person_report as $name => $info) : ?>
+                    <tr>
+                        <td><?php echo esc_html($name); ?></td>
+                        <td><?php echo esc_html($info['count']); ?></td>
+                        <td><?php echo esc_html($info['as_partner']); ?></td>
+                        <td><?php echo esc_html($info['as_chaser']); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <p class="description"><?php esc_html_e('One shared list — someone who\'s both a Chase Partner on some chases and a Chaser Encountered on others is one name here, not two; their "other chases" popup shows which role they were in each time. Review the list above — a name that isn\'t really a person (e.g. a stray descriptive phrase from an old chase log) or an inconsistent spelling of someone already listed elsewhere is safe to leave; migrating just creates/reuses a term for it. Nothing here is destructive — the original text fields are never modified or cleared.', 'stormchases'); ?></p>
+            <p>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;">
+                    <input type="hidden" name="action" value="storm_chases_apply_person_migration">
+                    <?php wp_nonce_field('storm_chases_person_migration_apply'); ?>
+                    <?php /* translators: %d: number of distinct names found to migrate */ ?>
+                    <button type="submit" class="button button-primary" onclick="return confirm('<?php echo esc_js(sprintf(__('Create/assign %d name(s) as Chase People terms across your chase logs?', 'stormchases'), $total_names)); ?>');">
+                        <?php /* translators: %d: number of distinct names found to migrate */ ?>
+                        <?php echo esc_html(sprintf(__('Migrate %d Name(s)', 'stormchases'), $total_names)); ?>
+                    </button>
+                </form>
+            </p>
+            <?php
+        }
+    }
+    ?>
+    <p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="storm_chases_scan_person_migration">
+            <?php wp_nonce_field('storm_chases_person_migration'); ?>
+            <button type="submit" class="button button-secondary"><?php esc_html_e('Scan Chase Logs for Names', 'stormchases'); ?></button>
+        </form>
+    </p>
+
+    <h3><?php esc_html_e('Name Corrections', 'stormchases'); ?></h3>
+    <p class="description">
+        <?php esc_html_e('The same person sometimes appears spelled differently across different chases (e.g. a typo, or with/without a middle initial). List confirmed corrections here, one per line, as "As Typed => Correct Spelling" — applied the next time you scan, so both variants merge into one profile under the correct name. Only add a pair here once you\'re sure it\'s really the same person; two similar-looking names can just as easily be two different people.', 'stormchases'); ?>
+    </p>
+    <?php if (isset($_GET['sc_person_aliases_saved'])) : ?>
+        <div class="notice notice-success inline"><p><?php esc_html_e('Name corrections saved.', 'stormchases'); ?></p></div>
+    <?php endif; ?>
+    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <input type="hidden" name="action" value="storm_chases_save_person_aliases">
+        <?php wp_nonce_field('storm_chases_person_aliases'); ?>
+        <p>
+            <textarea name="sc_person_aliases" rows="4" style="max-width:500px;width:100%;font-family:monospace;" placeholder="Dick Mcgowan => Dick McGowan"><?php
+                $aliases = Storm_Chases_People_Taxonomies::get_name_aliases();
+                $lines = array_map(function($pair) {
+                    return ($pair['alias'] ?? '') . ' => ' . ($pair['canonical'] ?? '');
+                }, $aliases);
+                echo esc_textarea(implode("\n", $lines));
+            ?></textarea>
+        </p>
+        <button type="submit" class="button button-secondary"><?php esc_html_e('Save Corrections', 'stormchases'); ?></button>
+    </form>
+
+    <h2><?php esc_html_e('Legacy Meta Row Cleanup', 'stormchases'); ?></h2>
+    <p class="description">
+        <?php esc_html_e('Chase data lives in a single chase_data field per post. Scan for stray individual meta rows left behind by an older save path (e.g. chasewind, chasemiles as their own rows) — these are never read by anything, but can be safely deleted once confirmed to match chase_data.', 'stormchases'); ?>
+    </p>
+    <?php
+    if (isset($_GET['sc_legacy_deleted'])) {
+        $deleted = absint($_GET['sc_legacy_deleted']);
+        $skipped = isset($_GET['sc_legacy_skipped']) ? absint($_GET['sc_legacy_skipped']) : 0;
+        printf(
+            '<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+            esc_html(sprintf(
+                /* translators: 1: number of rows deleted, 2: number of rows skipped */
+                __('Deleted %1$d legacy meta row(s). %2$d skipped (value did not match chase_data — left in place for manual review).', 'stormchases'),
+                $deleted,
+                $skipped
+            ))
+        );
+    }
+
+    $legacy_report = get_transient('storm_chases_legacy_meta_report_' . get_current_user_id());
+    if (isset($_GET['sc_legacy_scan']) && is_array($legacy_report)) {
+        if (empty($legacy_report)) {
+            echo '<p>' . esc_html__('No legacy individual meta rows found.', 'stormchases') . '</p>';
+        } else {
+            $safe_count = count(array_filter($legacy_report, fn($r) => $r['safe']));
+            ?>
+            <table class="widefat striped" style="max-width:900px;">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e('Post', 'stormchases'); ?></th>
+                        <th><?php esc_html_e('Meta Key', 'stormchases'); ?></th>
+                        <th><?php esc_html_e('Stray Value', 'stormchases'); ?></th>
+                        <th><?php esc_html_e('chase_data Value', 'stormchases'); ?></th>
+                        <th><?php esc_html_e('Status', 'stormchases'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($legacy_report as $row) : ?>
+                        <tr>
+                            <td><a href="<?php echo esc_url(get_edit_post_link($row['post_id'])); ?>"><?php echo esc_html($row['post_title'] ?: $row['post_id']); ?></a></td>
+                            <td><code><?php echo esc_html($row['meta_key']); ?></code></td>
+                            <td><?php echo esc_html(is_scalar($row['stray']) ? $row['stray'] : wp_json_encode($row['stray'])); ?></td>
+                            <td><?php echo esc_html(is_scalar($row['current']) ? $row['current'] : wp_json_encode($row['current'])); ?></td>
+                            <td>
+                                <?php if ($row['safe']) : ?>
+                                    <span style="color:#2271b1;"><?php esc_html_e('Matches — safe to delete', 'stormchases'); ?></span>
+                                <?php else : ?>
+                                    <strong style="color:#d63638;"><?php esc_html_e('Mismatch — needs manual review', 'stormchases'); ?></strong>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php if ($safe_count > 0) : ?>
+                <p>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;">
+                        <input type="hidden" name="action" value="storm_chases_delete_legacy_meta">
+                        <?php wp_nonce_field('storm_chases_legacy_meta'); ?>
+                        <?php /* translators: %d: number of legacy meta rows safe to delete */ ?>
+                        <button type="submit" class="button button-primary" onclick="return confirm('<?php echo esc_js(sprintf(__('Delete %d confirmed-matching legacy meta row(s)? This cannot be undone.', 'stormchases'), $safe_count)); ?>');">
+                            <?php /* translators: %d: number of legacy meta rows safe to delete */ ?>
+                            <?php echo esc_html(sprintf(__('Delete %d Safe Row(s)', 'stormchases'), $safe_count)); ?>
+                        </button>
+                    </form>
+                </p>
+            <?php endif; ?>
+            <?php
+        }
+    }
+    ?>
+    <p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="storm_chases_scan_legacy_meta">
+            <?php wp_nonce_field('storm_chases_legacy_meta'); ?>
+            <button type="submit" class="button button-secondary"><?php esc_html_e('Scan for Legacy Meta Rows', 'stormchases'); ?></button>
+        </form>
+    </p>
 </div>
